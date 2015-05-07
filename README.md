@@ -34,11 +34,15 @@ This is mainly for unit test clean up but there may be a legitimate usecase.
 	
 ## Connection information
 
+If `DialDefault()` is used, various reasonable defaults are set.
+
 The client uses environment variables `AEROSPIKE_HOST` and `AEROSPIKE_PORT` to connect to an Aerospike node.
 
 The library will attempt to parse `AEROSPIKE_PORT` either as a port number or a Docker environment variable as might be set if the the application is in a container that has been linked to an Aerospike conatiner with `--link aerospike:aerospike`. 
 
 If nothing is specified, the client assumes `aerospike` and `3000`
+
+The alternative `Dial(id string, host string, port int)` requires everything to be set explicitly.
 
 ## Benchmarks
 
