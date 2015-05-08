@@ -19,14 +19,17 @@ const (
 	AerospikeNameBy = "by"
 	AerospikeNameReason = "reason"
 	AerospikeNameDelay = "delay"
-	AerospikeNameDelayValue = "seconds"
+	AerospikeNameDelayValue = "seconds" // these are not used, review
 	AerospikeNameTtr = "ttr"
+	AerospikeNameTtrKey = "ttrkey"
+	AerospikeNameTtrValue = "seconds" // these are not used, review
 	// For the scan policy
 	AerospikeQueryQueueSize = 4
 
 	// For bin AerospikeNameStatus
 	AerospikeSymReady = "READY"
 	AerospikeSymReserved = "RESERVED"
+	AerospikeSymReservedTtr = "RESERVEDTTR"
 	AerospikeSymBuried = "BURIED"
 	AerospikeSymDelayed = "DELAYED"
 )

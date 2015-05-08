@@ -26,10 +26,15 @@ func TestPut(t *testing.T) {
 		t.Fatal(err) 
 	}
 
-	_, err = tube.Put([]byte("hello"), 0, 0)
+	id, err := tube.Put([]byte("hello"), 0, 0)
 	if err != nil {
 		t.Fatal(err) 
 	}
+	
+	err = tube.Touch(id)
+	if err == nil {
+		t.Fatal("Was able to touch a job that was not timeoutable") 
+	}	
 }
 
 func TestReserve(t *testing.T) {
@@ -49,6 +54,121 @@ func TestReserve(t *testing.T) {
 		t.Fatal("No job reserved")
 	}
 }
+
+func TestPutTtr(t *testing.T) {
+	conn, _ := DialDefault()
+	err := conn.Delete(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}
+		
+	tube, err := conn.Use(unitTube)
+	
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	ttrVal := 1*time.Second
+	
+	id, err := tube.Put([]byte("hello"), 0, ttrVal)
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	if id == 0 {
+		t.Fatal("No job put")
+	}
+	
+	idR, _, ttr, err := tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	if id != idR {
+		t.Fatalf("Wrong job reserved %v", idR)
+	}	
+	
+	if ttr != ttrVal {
+		t.Fatal("Wrong ttr value returned")	
+	}	
+	
+	idR2, _, _, err := tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	if idR2 != 0 {
+		t.Fatal("Unexpected job reserved")
+	}	
+	
+	time.Sleep(ttrVal*2)	
+	
+	idR3, _, _, err := tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	if idR3 != id {
+		t.Fatalf("Job not reserved after ttr, got %v", idR3)
+	}	
+}
+
+func TestPutTouch(t *testing.T) {
+	conn, _ := DialDefault()
+	err := conn.Delete(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}
+		
+	tube, err := conn.Use(unitTube)
+	
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	ttrVal := 2*time.Second
+	
+	id, err := tube.Put([]byte("hello"), 0, ttrVal)
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	if id == 0 {
+		t.Fatal("No job put")
+	}
+	
+	idR, _, ttr, err := tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	if id != idR {
+		t.Fatal("Wrong job reserved, %v instead of %v", idR, id)
+	}	
+	
+	if ttr != ttrVal {
+		t.Fatal("Wrong ttr value returned")	
+	}	
+
+	time.Sleep(time.Second*1)	
+	
+	err = tube.Touch(idR)
+	if err != nil {
+		t.Fatal(err) 
+	}
+		
+	time.Sleep(time.Second*1)	
+	
+	idR3, _, _, err := tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	if idR3 != 0 {
+		t.Fatal("Touch did not keep the job reserved")
+	}	
+}
+
 
 func TestRelease(t *testing.T) {
 	conn, _ := DialDefault()
@@ -182,6 +302,7 @@ func TestStats(t *testing.T) {
 }	
 
 func TestShouldOperate(t *testing.T) {
+	const unitkey = "unittest"
 	conn, _ := DialDefault()
 	
 	err := conn.Delete(unitTube)
@@ -202,24 +323,24 @@ func TestShouldOperate(t *testing.T) {
 		t.Fatal(err) 
 	}
 		
-	should := tube1.shouldOperate()
+	should := tube1.shouldOperate(unitkey)
 	if !should {
 		t.Fatal("Was not allowed to operate") 
 	}
 	
-	should = tube1.shouldOperate()
+	should = tube1.shouldOperate(unitkey)
 	if should {
 		t.Fatal("Was allowed to operate") 
 	}	
 	
-	should = tube2.shouldOperate()
+	should = tube2.shouldOperate(unitkey)
 	if !should {
 		t.Fatal("Secondary tube was not allowed to operate") 
 	}	
 	
 	// sleep for AerospikeAdminDelay and tube1 should be ok again
 	time.Sleep(time.Duration(AerospikeAdminDelay + 1)*time.Second)
-	should = tube1.shouldOperate()
+	should = tube1.shouldOperate(unitkey)
 	if !should {
 		t.Fatalf("Was not allowed to operate after waiting %v seconds", AerospikeAdminDelay) 
 	}	

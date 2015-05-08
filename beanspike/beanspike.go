@@ -121,7 +121,7 @@ func (conn *Conn) newJobId() (int64, error)  {
 // this could be done in the future with UDFs triggered on expiry
 // note, delays are defined as best effort delay
 func (tube *Tube) delayJob(id int64, delay time.Duration) (*as.Bin, error) {
-	delayKey := tube.Name+":"+strconv.FormatInt(id, 10)
+	delayKey := tube.Name+":delay:"+strconv.FormatInt(id, 10)
 
 	key, err := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, delayKey)
 	if err != nil {
@@ -132,12 +132,12 @@ func (tube *Tube) delayJob(id int64, delay time.Duration) (*as.Bin, error) {
 		return nil, errors.New("No delay key generated")
 	}
 			
-	delayPolicy := as.NewWritePolicy(0, int32(delay.Seconds()))
-	delayPolicy.RecordExistsAction = as.CREATE_ONLY
-	delayPolicy.CommitLevel = as.COMMIT_MASTER		
+	policy := as.NewWritePolicy(0, int32(delay.Seconds()))
+	policy.RecordExistsAction = as.CREATE_ONLY
+	policy.CommitLevel = as.COMMIT_MASTER		
 	
 	delayBin:= as.NewBin(AerospikeNameDelayValue, int32(delay.Seconds()))		
-	err = tube.Conn.aerospike.PutBins(delayPolicy, key, delayBin)
+	err = tube.Conn.aerospike.PutBins(policy, key, delayBin)
 	if err != nil {
 		return nil, err
 	}
@@ -145,9 +145,35 @@ func (tube *Tube) delayJob(id int64, delay time.Duration) (*as.Bin, error) {
 	return as.NewBin(AerospikeNameDelay, delayKey), nil
 }
 
+func (tube *Tube) timeJob(id int64, ttr time.Duration) (*as.Bin, error) {
+	ttrKey := tube.Name+":ttr:"+strconv.FormatInt(id, 10)
+
+	key, err := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, ttrKey)
+	if err != nil {
+		return nil, err
+	}
+	
+	if key == nil {
+		return nil, errors.New("No ttr key generated")
+	}
+			
+	policy := as.NewWritePolicy(0, int32(ttr.Seconds()))
+	policy.RecordExistsAction = as.CREATE_ONLY
+	policy.CommitLevel = as.COMMIT_MASTER		
+	
+	ttrBin:= as.NewBin(AerospikeNameTtrValue, int32(ttr.Seconds()))		
+	err = tube.Conn.aerospike.PutBins(policy, key, ttrBin)
+	if err != nil {
+		return nil, err
+	}
+
+	return as.NewBin(AerospikeNameTtrKey, ttrKey), nil
+}
+
+
 // puts an expiring entry that locks out other scans on the tube
-func (tube *Tube) shouldOperate() (bool) {
-	key, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, tube.Name+":scan")
+func (tube *Tube) shouldOperate(scan string) (bool) {
+	key, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, tube.Name+":"+scan)
 
 	policy := as.NewWritePolicy(0, AerospikeAdminDelay)
 	policy.RecordExistsAction = as.CREATE_ONLY
@@ -162,10 +188,84 @@ func (tube *Tube) shouldOperate() (bool) {
 	return true
 }
 
-// admin function to move delayed operations to READY
+// admin function to move RESERVED operations with a TTR to READY
+// if required
+func (tube *Tube) bumpReservedEntries(n int) (int, error) {
+	if !tube.shouldOperate("reservedttr") {
+		// println("skipping operation")
+		return 0, nil
+	}
+		
+	client := tube.Conn.aerospike
+	
+	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameTtrKey)
+	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReservedTtr))
+	
+	policy := as.NewQueryPolicy()
+	policy.RecordQueueSize = n
+
+	recordset, err := client.Query(policy, stm)
+	
+	// build a list of delayed jobs
+	if err != nil {
+		return 0, err
+	}	
+	
+	defer recordset.Close()
+	type Entry struct {
+		generation 	int32
+		key			*as.Key
+	}
+	entries := make([]*Entry, 0, n)
+	keys := make([]*as.Key, 0, n)
+	for res := range recordset.Results() {
+		if res.Err != nil {
+			return 0, err
+		}
+		entry := res.Record.Bins[AerospikeNameTtrKey].(string)
+		key, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, entry)
+		keys = append(keys, key)
+		
+		val := &Entry{int32(res.Record.Generation), res.Record.Key}
+		entries = append(entries, val)		
+	}
+	
+	batch := as.NewPolicy()
+	batch.Priority = as.HIGH
+	records, err := client.BatchGetHeader(batch, keys)
+	if err != nil {
+		return 0, err
+	}
+	
+	count := 0	
+	for i := 0; i < len(records); i++ {
+		record := records[i]
+		if record == nil {
+			// the reserve has expired
+			update := as.NewWritePolicy(entries[i].generation, 0)
+			update.RecordExistsAction = as.UPDATE_ONLY
+			update.CommitLevel = as.COMMIT_MASTER
+			update.GenerationPolicy = as.EXPECT_GEN_EQUAL
+			update.SendKey = true
+			
+			binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
+			// removing Delay may not be required
+			binTtrKey := as.NewBin(AerospikeNameTtrKey, as.NewNullValue())
+			err := client.PutBins(update, entries[i].key, binStatus, binTtrKey)
+			if err != nil {
+				return count, err
+			}
+			count++
+		}
+	}	
+
+	return count, nil	
+}
+
+// admin function to move DELAYED operations to READY
 // returns the number of jobs processed and if any action was taken
-func (tube *Tube) bumpDelayedEnries(n int) (int, error) {
-	if !tube.shouldOperate() {
+func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
+	if !tube.shouldOperate("delayed") {
 		// println("skipping operation")
 		return 0, nil
 	}
@@ -225,8 +325,9 @@ func (tube *Tube) bumpDelayedEnries(n int) (int, error) {
 			update.SendKey = true
 			
 			binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
-			
-			err := client.PutBins(update, entries[i].key, binStatus)
+			// removing Delay may not be required
+			binDelay := as.NewBin(AerospikeNameDelay, as.NewNullValue())
+			err := client.PutBins(update, entries[i].key, binStatus, binDelay)
 			if err != nil {
 				return count, err
 			}
@@ -249,7 +350,6 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration) (id i
 	}
 
 	binBody := as.NewBin(AerospikeNameBody, body)
-	binTtr := as.NewBin(AerospikeNameTtr, int64(ttr.Seconds()))
 	
 	policy := as.NewWritePolicy(0, 0)
 	policy.RecordExistsAction = as.CREATE_ONLY
@@ -258,23 +358,38 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration) (id i
 	
 	client := tube.Conn.aerospike
 	
+	bins := make([]*as.Bin, 0, 6)
+	bins = append(bins, binBody)
+	
 	if delay == 0 {
 		binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
-
-		err = client.PutBins(policy, key, binBody, binStatus, binTtr)
+		bins = append(bins, binStatus)
 	} else {
 		// put the delay entry in first
 		binDelay, err := tube.delayJob(id, delay)
-		if err == nil {
-			// put the job in in a delayed state
-			binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymDelayed)
-			err = client.PutBins(policy, key, binBody, binStatus, binTtr, binDelay)
+		if err != nil {
+			return 0, err
 		}
+		binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymDelayed)
+		bins = append(bins, binStatus)
+		bins = append(bins, binDelay)
 	}
+	
+	if ttr != 0 {
+		binTtr := as.NewBin(AerospikeNameTtr, int64(ttr.Seconds()))
+		bins = append(bins, binTtr)
+		binTtrExp, err := tube.timeJob(id, ttr)
+		if err != nil {
+			return 0, err
+		}
+		bins = append(bins, binTtrExp)
+	}
+
+	err = client.PutBins(policy, key, bins...)
 	if err != nil {
 		return 0, err
 	}
-		
+			
 	return id, nil
 }
 /*
@@ -294,12 +409,12 @@ func (tube *Tube) ReserveAndWait(bus *MessageBus, timeout time.Duration) (id int
 	return 0, nil, nil
 }
 */
-func (tube *Tube) attemptJobReservation(record *as.Record) (err error) {
+func (tube *Tube) attemptJobReservation(record *as.Record, status string) (err error) {
 	writePolicy := as.NewWritePolicy(int32(record.Generation), 0)
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
 	
-	binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReserved)
+	binStatus := as.NewBin(AerospikeNameStatus, status)
 	binBy := as.NewBin(AerospikeNameBy, tube.Conn.clientId)
 	return tube.Conn.aerospike.PutBins(writePolicy, record.Key, binStatus, binBy)
 }
@@ -373,6 +488,42 @@ func (tube* Tube) Stats() (s *Stats, err error) {
 	return s, nil
 }
 
+func (tube *Tube) Touch(id int64) (error) {
+	client := tube.Conn.aerospike
+
+	key, err := as.NewKey(AerospikeNamespace, tube.Name, id)
+	if err != nil {
+		return err
+	}
+	
+	record, err := client.Get(nil, key, AerospikeNameStatus, AerospikeNameBy, AerospikeNameTtr, AerospikeNameTtrKey)
+	if err != nil {
+		return err
+	}
+	
+	ttrValue := record.Bins[AerospikeNameTtr]
+	if record.Bins[AerospikeNameTtrKey] == nil || ttrValue == nil {
+		return errors.New("Job does not need Touching")
+	}
+		
+	if record.Bins[AerospikeNameStatus] != AerospikeSymReservedTtr {
+		return errors.New("Job is not reserved, may have timed out")
+	}
+	
+	if record.Bins[AerospikeNameBy] != tube.Conn.clientId {
+		return errors.New("Job is not reserved by this client")
+	}
+
+	touch, err := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, record.Bins[AerospikeNameTtrKey].(string))
+	if err != nil {
+		return err
+	}
+		
+	policy := as.NewWritePolicy(0, int32(ttrValue.(int)))
+	policy.CommitLevel = as.COMMIT_MASTER
+	return client.Touch(policy, touch)
+}
+
 func (tube *Tube) Release(id int64, delay time.Duration) (error) {
 	client := tube.Conn.aerospike
 
@@ -386,7 +537,7 @@ func (tube *Tube) Release(id int64, delay time.Duration) (error) {
 		return err
 	}
 	
-	if record.Bins[AerospikeNameStatus] != AerospikeSymReserved {
+	if status := record.Bins[AerospikeNameStatus]; status != AerospikeSymReserved && status != AerospikeSymReservedTtr {
 		return errors.New("Job is not reserved")
 	}
 	
@@ -477,9 +628,9 @@ func (tube *Tube) KickJob(id int64) (error) {
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
 	
 	binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
-	//TODO: Can or should the bins be deleted?
-	binReason := as.NewBin(AerospikeNameReason, "")
-	binDelay := as.NewBin(AerospikeNameDelay, 0)
+
+	binReason := as.NewBin(AerospikeNameReason, as.NewNullValue())
+	binDelay := as.NewBin(AerospikeNameDelay, as.NewNullValue())
 
 	return client.PutBins(writePolicy, record.Key, binStatus, binReason, binDelay)	
 }
@@ -496,6 +647,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, err error
 	policy := as.NewQueryPolicy()
 	policy.RecordQueueSize = AerospikeQueryQueueSize
 
+R:
 	for i:=0; i<2; i++ {
 		recordset, err := client.Query(policy, stm)
 
@@ -513,14 +665,16 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, err error
 			} else {
 				body := res.Record.Bins[AerospikeNameBody]
 				ttr = 0
-			
+				
+				reserve := AerospikeSymReserved
 				if ttrValue := res.Record.Bins[AerospikeNameTtr]; ttrValue != nil {
 					ttr = time.Duration(ttrValue.(int))*time.Second
+					reserve = AerospikeSymReservedTtr
 				}
 				if key := res.Record.Key.Value(); key != nil && key.GetType() == pt.INTEGER && body != nil {
 					job := res.Record.Key.Value().GetObject().(int64)
 				
-					lockErr := tube.attemptJobReservation(res.Record)
+					lockErr := tube.attemptJobReservation(res.Record, reserve)
 					if lockErr == nil {
 						// success, we have this job
 						return job, body.([]byte), ttr, nil		
@@ -536,9 +690,13 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, err error
 				}
 			}
 		}
+		count, _ := tube.bumpReservedEntries(AerospikeAdminScanSize)
+		if count != 0 {
+			break R
+		}	
 	
 		// no jobs to return, use the cycles to admin the set
-		count, _ := tube.bumpDelayedEnries(AerospikeAdminScanSize)
+		count, _ = tube.bumpDelayedEntries(AerospikeAdminScanSize)
 		if count == 0 {
 			break
 		}	

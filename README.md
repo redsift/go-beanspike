@@ -20,6 +20,12 @@ Beanstalk inspired job queue backed by Aerospike KVS.
 	....
 	exists, err := tube.Delete(id)
 
+### Touch
+	
+	err = tube.Touch(id)
+
+If a job is `Put` in the tube with a `ttr`, the job must be touched at some period smaller than this value to keep it reserved. An error on `Touch` should be treated as an instruction to abandon the job because it has been deleted or has timed out.
+
 ### Stats
 
 	conn, _ := DialDefault()
@@ -55,7 +61,7 @@ The alternative `Dial(id string, host string, port int)` requires everything to 
 	
 ## TODO
 
-- `Touch` and TTL related implementations. 
+- Fix TTL related implementations. 
 - Messaging implementation for `Reserve`. 
 - Possibly review stats. Review UDF lifecycle management.
 - `Kick` and `Bury` unit tests
