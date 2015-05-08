@@ -10,12 +10,13 @@ Beanstalk inspired job queue backed by Aerospike KVS.
 	tube, _ := conn.Use("testtube")
 	id, err := tube.Put([]byte("hello"), 0, 0)
 
+`Put(body []byte, delay time.Duration, ttr time.Duration)` where `delay` will hold the job in a delayed mode before releasing it for processing. Note, in practice all delayed jobs will be behind any immediately available jobs in the tube. `ttr` is the time the consumer of the job must `Touch` the task within or have it return to the ready state.
 
 ### Reserve & Delete
 	
 	conn, _ := DialDefault()
 	tube, _ := conn.Use("testtube")
-	id, body, err := tube.Reserve()
+	id, body, ttl, err := tube.Reserve()
 	....
 	exists, err := tube.Delete(id)
 
