@@ -50,7 +50,11 @@ The alternative `Dial(id string, host string, port int)` requires everything to 
 	...
 	BenchmarkPut	    	2000	    589034 ns/op
 	BenchmarkReserve	     200	  14759261 ns/op
-
+	BenchmarkRelease	    3000	    607290 ns/op
+	
 ## TODO
 
-`Touch`, `Bury`, `Release` and TTL related implementations. Possibly review stats. Review UDF lifecycle management.
+- `Touch` and TTL related implementations. 
+- Messaging implementation for `Reserve`. 
+- Possibly review stats. Review UDF lifecycle management.
+- `Kick` and `Bury` unit tests

@@ -3,56 +3,44 @@ package beanspike
 import (
 	"time"
 	"testing"
-	"fmt"
 )
+
+const unitTube = "unittesttube"
+const benchTube = "benchtesttube"
 
 func TestConnection(t *testing.T) {
 	_, err := DialDefault()
 	
 	if err != nil {
 		// fatal as looks like nothing else will work
-		t.Fatal(err) 
+		t.Fatalf("Unable to connect. %v", err) 
 	}
 }
 
 
 func TestPut(t *testing.T) {
-	conn, err := DialDefault()
-	
-	if err != nil {
-		// fatal as looks like nothing else will work
-		t.Fatal(err) 
-	}
-	
-	tube, err := conn.Use("testtube4")
+	conn, _ := DialDefault()
+	tube, err := conn.Use(unitTube)
 	
 	if err != nil {
 		t.Fatal(err) 
 	}
 
-	id, err := tube.Put([]byte("hello"), 0, 0)
+	_, err = tube.Put([]byte("hello"), 0, 0)
 	if err != nil {
 		t.Fatal(err) 
 	}
-	
-	println("put job=", id)
 }
 
 func TestReserve(t *testing.T) {
-	conn, err := DialDefault()
-	
-	if err != nil {
-		// fatal as looks like nothing else will work
-		t.Fatal(err) 
-	}
-
-	tube, err := conn.Use("testtube4")
+	conn, _ := DialDefault()
+	tube, err := conn.Use(unitTube)
 	
 	if err != nil {
 		t.Fatal(err) 
 	}
 
-	id, _, err := tube.Reserve()
+	id, _, _, err := tube.Reserve()
 	if err != nil {
 		t.Fatal(err) 
 	}
@@ -60,13 +48,71 @@ func TestReserve(t *testing.T) {
 	if id == 0 {
 		t.Fatal("No job reserved")
 	}
+}
+
+func TestRelease(t *testing.T) {
+	conn, _ := DialDefault()
 	
-	println("got job=", id)
+	err := conn.Delete(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}	
+	
+	tube, err := conn.Use(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	magicTtr := 42*time.Second
+	
+	id, err := tube.Put([]byte("hello"), 0, magicTtr)
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	err = tube.Release(id, 0)
+	if err == nil {
+		t.Fatal("Released job that was not reserved") 
+	}
+	
+	time.Sleep(1*time.Second)
+	
+	idR, _, ttr, err := tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}
+	if idR == 0 {
+		t.Fatal("No job reserved")
+	}
+	if id != idR {
+		t.Fatalf("Wrong job %v reserved vs expected %v", idR, id)
+	}
+	if ttr != magicTtr {
+		t.Fatalf("Returned TTR %v not the expected TTR %v", ttr, magicTtr)	
+	}
+	
+	idN, _, _, err := tube.Reserve()
+	if idN != 0 {
+		t.Fatal("Unexpected job reserved")
+	}
+	
+	err = tube.Release(id, 0)
+	if err != nil {
+		t.Fatal(err) 
+	}
+		
+	idN, _, _, err = tube.Reserve()
+	if idN == 0 {
+		t.Fatal("No job reserved after release")
+	}
+	if idN != id {
+		t.Fatal("Unexpected job reserved after release")
+	}
 }
 
 func TestDelete(t *testing.T) {
 	conn, _ := DialDefault()
-	tube, err := conn.Use("testtube-delete")
+	tube, err := conn.Use(unitTube)
 	
 	if err != nil {
 		t.Fatal(err) 
@@ -94,46 +140,148 @@ func TestDelete(t *testing.T) {
 	if exists {
 		t.Fatal("Job Id should not exist") 
 	}
-		
-	println("deleted job=", id)
 }
 
 func TestStats(t *testing.T) {
 	const jobs = 20
 	conn, _ := DialDefault()
 
-	err := conn.Delete("testtube-stats")
+	err := conn.Delete(unitTube)
 	if err != nil {
 		t.Fatal(err) 
 	}		
-	tube, _ := conn.Use("testtube-stats")
+	tube, _ := conn.Use(unitTube)
 	
 	// Submit `jobs` jobs, reserve 1
 	for i := 0; i < jobs; i++ {
-		_, err = tube.Put([]byte("to count"), 0*time.Second, 120*time.Second)
+		_, err = tube.Put([]byte("to count"), 0, 0)
 		if err != nil {
 			t.Fatal(err) 
 		}
 	}
-	_, _, err = tube.Reserve()
+	_, _, _, err = tube.Reserve()
 	if err != nil {
 		t.Fatal(err) 
 	}
+		
+	time.Sleep(1*time.Second)
 		
 	stats, err := tube.Stats()
 	if err != nil {
 		t.Fatal(err) 
 	}	
-	fmt.Printf("stats, %+v\n", stats)
+	t.Logf("Stats returned, %+v\n", stats)
 	
 	if stats.Jobs != jobs {
-		t.Fatal("Wrong number of jobs reported") 	
+		t.Fatalf("Wrong number of jobs reported, %v vs %v", stats.Jobs, jobs) 	
 	}
 
 	if stats.Ready != jobs - 1 {
-		t.Fatal("Wrong number of ready jobs reported") 	
+		t.Fatalf("Wrong number of ready jobs reported, %v vs an expected %v", stats.Ready, jobs - 1) 	
 	}
 }	
+
+func TestShouldOperate(t *testing.T) {
+	conn, _ := DialDefault()
+	
+	err := conn.Delete(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}	
+	err = conn.Delete(unitTube+"alt")
+	if err != nil {
+		t.Fatal(err) 
+	}	
+			
+	tube1, err := conn.Use(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}
+	tube2, err := conn.Use(unitTube+"alt")
+	if err != nil {
+		t.Fatal(err) 
+	}
+		
+	should := tube1.shouldOperate()
+	if !should {
+		t.Fatal("Was not allowed to operate") 
+	}
+	
+	should = tube1.shouldOperate()
+	if should {
+		t.Fatal("Was allowed to operate") 
+	}	
+	
+	should = tube2.shouldOperate()
+	if !should {
+		t.Fatal("Secondary tube was not allowed to operate") 
+	}	
+	
+	// sleep for AerospikeAdminDelay and tube1 should be ok again
+	time.Sleep(time.Duration(AerospikeAdminDelay + 1)*time.Second)
+	should = tube1.shouldOperate()
+	if !should {
+		t.Fatalf("Was not allowed to operate after waiting %v seconds", AerospikeAdminDelay) 
+	}	
+}
+
+func TestBumpDelayed(t *testing.T) {
+	conn, _ := DialDefault()
+	
+	conn.Delete(unitTube)
+	tube, err := conn.Use(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}
+	delay := AerospikeAdminDelay + 1
+	idJ, err := tube.Put([]byte("hello"), time.Duration(delay)*time.Second, 0)
+	if err != nil {
+		t.Fatal(err) 
+	}
+	id, _, _, err := tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}
+	if id != 0 {
+		t.Fatalf("Job %v got reserved when none should have been", id) 
+	}
+		
+	// sleep for timeout
+	time.Sleep(time.Duration(delay*2)*time.Second)
+	
+	id, _, _, err = tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}
+	if id == 0 {
+		t.Fatal("Job should have been released after wait") 
+	}
+	if id != idJ {
+		t.Fatal("Delayed job was not presented") 
+	}
+	
+	err = tube.Release(id, time.Duration(delay)*time.Second)
+	if err != nil {
+		t.Fatal(err) 
+	}	
+	id, _, _, err = tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}	
+	if id != 0 {
+		t.Fatal("Job should have been delayed") 
+	}	
+	
+	time.Sleep(time.Duration(delay*2)*time.Second)
+	
+	id, _, _, err = tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}	
+	if id != idJ {
+		t.Fatal("Job should have been presented after delay") 
+	}		
+}
 
 var result int64
 
@@ -141,24 +289,27 @@ var result int64
 func BenchmarkPut(b *testing.B) {
 	conn, _ := DialDefault()
 	
-	conn.Delete("puttest")
-	tube, _ := conn.Use("puttest")
+	conn.Delete(benchTube)
+	tube, _ := conn.Use(benchTube)
 	
 	val := []byte("hello")
-	var id int64
+
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		id, _ = tube.Put(val, 0, 0)
+		_, err := tube.Put(val, 0, 0)
+		if err != nil {
+			b.Fatalf("Error putting Job. %v", err)
+		}	
+		
 	}
-	result = id
 }
 
 // Sitting at 16ms / reserve
 func BenchmarkReserve(b *testing.B) {
 	conn, _ := DialDefault()
 	
-	conn.Delete("putreservetest")
-	tube, _ := conn.Use("putreservetest")
+	conn.Delete(benchTube)
+	tube, _ := conn.Use(benchTube)
 	
 	val := []byte("hello")
 	for n := 0; n < b.N; n++ {
@@ -168,10 +319,44 @@ func BenchmarkReserve(b *testing.B) {
 	var id int64
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		id, _, _ = tube.Reserve()
+		id, _, _, err := tube.Reserve()
+		if err != nil {
+			b.Fatalf("Error reserving Job. %v", err)
+		}		
+		if id == 0 {
+			b.Fatal("No reserved Job.")
+		}	
 	}
 	result = id
 }
 
+func BenchmarkRelease(b *testing.B) {
+	conn, _ := DialDefault()
+	
+	conn.Delete(benchTube)
+	tube, _ := conn.Use(benchTube)
+	
+	val := []byte("hello")
+	for n := 0; n < b.N; n++ {
+		tube.Put(val, 0, 0)
+	}
+	ids := make([]int64, b.N)
+	for n := 0; n < b.N; n++ {
+		id, _, _, err := tube.Reserve()
+		if err != nil {
+			b.Fatalf("Error reserving Job. %v", err)
+		}
+		
+		ids[n] = id
+	}
+		
+	b.ResetTimer()
+	for _, id := range ids {
+		err := tube.Release(id, 0)
+		if err != nil {
+			b.Fatalf("Error releasing Job. %v", err)
+		}		
+	}
+}
 
 
