@@ -51,9 +51,15 @@ If nothing is specified, the client assumes `aerospike` and `3000`
 
 The alternative `Dial(id string, host string, port int)` requires everything to be set explicitly.
 
+## Unit Tests
+
+	$ gpm
+	$ source gvp
+	$ go test
+
 ## Benchmarks
 
-	go test --bench=.
+	$ go test --bench=.
 	...
 	BenchmarkPut	    	2000	    589034 ns/op
 	BenchmarkReserve	     200	  14759261 ns/op
