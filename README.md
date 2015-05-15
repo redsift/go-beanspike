@@ -8,9 +8,9 @@ Beanstalk inspired job queue backed by Aerospike KVS.
 
 	conn, _ := DialDefault()
 	tube, _ := conn.Use("testtube")
-	id, err := tube.Put([]byte("hello"), 0, 0)
+	id, err := tube.Put([]byte("hello"), 0, 0, true)
 
-`Put(body []byte, delay time.Duration, ttr time.Duration)` where `delay` will hold the job in a delayed mode before releasing it for processing. Note, in practice all delayed jobs will be behind any immediately available jobs in the tube. `ttr` is the time the consumer of the job must `Touch` the task within or have it return to the ready state.
+`Put(body []byte, delay time.Duration, ttr time.Duration, lz bool)` where `delay` will hold the job in a delayed mode before releasing it for processing. Note, in practice all delayed jobs will be behind any immediately available jobs in the tube. `ttr` is the time the consumer of the job must `Touch` the task within or have it return to the ready state. If `lz` is true, the action will try and compress the payload trading some performance for memory usage on Aerospike. Note, if the payload is too small or the LZ4 compression is unable to provide a space saving, the entry may be inserted uncompressed anyway. Passing `true` is largely safe from a performance prespective unless you know that `body` is large and high entorpy. Cases where compression was attempted and abandoned in currently present jobs are reflected in `Stats.SkippedSize`.
 
 ### Reserve & Delete
 	
