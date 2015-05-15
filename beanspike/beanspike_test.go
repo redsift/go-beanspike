@@ -143,7 +143,7 @@ func TestPutTouch(t *testing.T) {
 	}
 	
 	if id != idR {
-		t.Fatal("Wrong job reserved, %v instead of %v", idR, id)
+		t.Fatalf("Wrong job reserved, %v instead of %v", idR, id)
 	}	
 	
 	if ttr != ttrVal {
