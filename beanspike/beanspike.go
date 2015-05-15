@@ -23,6 +23,9 @@ type Tube struct {
 type Stats struct {
 	Jobs 		int
 	Ready		int
+	JobSize		int
+	UsedSize	int
+	SkippedSize	int
 }
 
 func DialDefault() (*Conn, error) {

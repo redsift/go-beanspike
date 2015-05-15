@@ -43,13 +43,13 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 			// incompressible, leave it raw, marked with a -value for AerospikeNameCompressedSize
 			binBody := as.NewBin(AerospikeNameBody, body)
 			bins = append(bins, binBody)
-		
+
 			binCompressedSize := as.NewBin(AerospikeNameCompressedSize, -len(cbody))
 			bins = append(bins, binCompressedSize)		
 		} else {
 			binBody := as.NewBin(AerospikeNameBody, cbody)
 			bins = append(bins, binBody)
-		
+	
 			binCompressedSize := as.NewBin(AerospikeNameCompressedSize, len(cbody))
 			bins = append(bins, binCompressedSize)			
 		}
@@ -123,9 +123,24 @@ local function aggregate_stats(out, rec)
     if rec['status'] == 'READY' then
     	val = 1
     end
+    local rel = rec['size']
+    local skip = 0
+    
+    local cz = rec['csize'] 
+    if cz then
+    	if cz > 0 then
+    		rel = cz
+    	else
+    		skip = -cz
+    	end
+    end
     
     out['count'] = out['count'] + 1
     out['ready'] = out['ready'] + val
+    out['js'] = out['js'] + rec['size']
+    out['rs'] = out['rs'] + rel
+    out['ss'] = out['ss'] + skip
+            
     return out
 end
 
@@ -133,6 +148,10 @@ function add_stat_ops(stream)
 	local m = map()
 	m['count'] = 0
 	m['ready'] = 0
+	m['js'] = 0
+	m['rs'] = 0
+	m['ss'] = 0
+		
     return stream : aggregate(m, aggregate_stats)
 end
 `
@@ -155,10 +174,20 @@ func (tube* Tube) Stats() (s *Stats, err error) {
 		if res.Err != nil {
 			return nil, res.Err
 		}
-		results := res.Record.Bins["SUCCESS"].(map[interface{}]interface{})
 		
-		s.Jobs += results["count"].(int)
-		s.Ready += results["ready"].(int)
+		if resultsVal := res.Record.Bins["SUCCESS"]; resultsVal != nil {
+			results := resultsVal.(map[interface{}]interface{})
+		
+			s.Jobs += results["count"].(int)
+			s.Ready += results["ready"].(int)
+			s.JobSize += results["js"].(int)
+			s.UsedSize += results["rs"].(int)
+			s.SkippedSize += results["ss"].(int)
+		} else if errorVal := res.Record.Bins["FAILURE"]; errorVal != nil {
+			return nil, errors.New(fmt.Sprintf("Stats error. %v", errorVal))
+		} else {
+			return nil, errors.New("Internal error performing stats on namespace")
+		}
 	}
 
 	return s, nil

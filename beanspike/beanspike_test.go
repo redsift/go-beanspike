@@ -373,7 +373,12 @@ func TestDelete(t *testing.T) {
 }
 
 func TestStats(t *testing.T) {
-	const jobs = 20
+	const basicjobs = 20
+	const compressjobs = 20
+	
+	basic := []byte("to count")
+	compress := []byte(strings.Repeat("R", 3000))
+		
 	conn, _ := DialDefault()
 	err := conn.Delete(unitTube)
 	if err != nil {
@@ -383,13 +388,20 @@ func TestStats(t *testing.T) {
 		
 	tube, _ := conn.Use(unitTube)
 	
-	// Submit `jobs` jobs, reserve 1
-	for i := 0; i < jobs; i++ {
-		_, err = tube.Put([]byte("to count"), 0, 0, false)
+	// Submit `basicjobs+compressjobs` jobs, reserve 1
+	for i := 0; i < basicjobs; i++ {
+		_, err = tube.Put(basic, 0, 0, false)
 		if err != nil {
 			t.Fatal(err) 
 		}
 	}
+	for i := 0; i < compressjobs; i++ {
+		_, err = tube.Put(compress, 0, 0, true)
+		if err != nil {
+			t.Fatal(err) 
+		}
+	}
+		
 	_, _, _, err = tube.Reserve()
 	if err != nil {
 		t.Fatal(err) 
@@ -402,6 +414,8 @@ func TestStats(t *testing.T) {
 		t.Fatal(err) 
 	}	
 	t.Logf("Stats returned, %+v\n", stats)
+	
+	jobs := basicjobs + compressjobs
 	
 	if stats.Jobs != jobs {
 		t.Fatalf("Wrong number of jobs reported, %v vs %v", stats.Jobs, jobs) 	
