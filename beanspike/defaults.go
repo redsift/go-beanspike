@@ -37,4 +37,7 @@ const (
 	AerospikeSymReservedTtr = "RESERVEDTTR"
 	AerospikeSymBuried = "BURIED"
 	AerospikeSymDelayed = "DELAYED"
+	
+	AerospikeKeySuffixTtr = "reservedttr"
+	AerospikeKeySuffixDelayed = "delayed"
 )

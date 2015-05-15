@@ -17,6 +17,13 @@ func deleteSleep() {
 	time.Sleep(2*time.Second)
 }
 
+func max(a time.Duration, b time.Duration) (time.Duration) {
+	if b > a {
+		return b
+	}
+	return a
+}
+
 func TestConnection(t *testing.T) {
 	_, err := DialDefault()
 	
@@ -210,8 +217,8 @@ func TestPutTtr(t *testing.T) {
 		t.Fatalf("Unexpected job reserved %v", idR2)
 	}	
 	
-	// Wait till the ttrVal has expired
-	time.Sleep(ttrVal*2)	
+	// Wait till the ttrVal has expired or a scan is ready to go
+	time.Sleep(max(AerospikeAdminDelay*time.Second*2, ttrVal*2))	
 	
 	// Make sure Job has timed out and can be reserved
 	idR3, _, _, err := tube.Reserve()
@@ -379,8 +386,12 @@ func TestStats(t *testing.T) {
 	basic := []byte("to count")
 	compress := []byte(strings.Repeat("R", 3000))
 		
-	conn, _ := DialDefault()
-	err := conn.Delete(unitTube)
+	conn, err := DialDefault()
+	if err != nil {
+		t.Fatal(err) 
+	}	
+	
+	err = conn.Delete(unitTube)
 	if err != nil {
 		t.Fatal(err) 
 	}		

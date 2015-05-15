@@ -23,6 +23,9 @@ type Tube struct {
 type Stats struct {
 	Jobs 		int
 	Ready		int
+	Buried		int
+	Delayed		int
+	Reserved	int
 	JobSize		int
 	UsedSize	int
 	SkippedSize	int

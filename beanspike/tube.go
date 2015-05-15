@@ -119,9 +119,15 @@ func (tube *Tube) Delete(id int64) (bool, error) {
 
 const statsLua = `
 local function aggregate_stats(out, rec)
-    local val = 0
-    if rec['status'] == 'READY' then
-    	val = 1
+	local st = rec['status']
+    if st == 'READY' then
+    	 out['ready'] = out['ready'] + 1
+    elseif st == 'BURIED' then
+    	 out['buried'] = out['buried'] + 1
+    elseif st == 'DELAYED' then
+    	 out['delayed'] = out['delayed'] + 1 
+	else
+		 out['reserved'] = out['reserved'] + 1
     end
     local rel = rec['size']
     local skip = 0
@@ -136,7 +142,7 @@ local function aggregate_stats(out, rec)
     end
     
     out['count'] = out['count'] + 1
-    out['ready'] = out['ready'] + val
+   
     out['js'] = out['js'] + rec['size']
     out['rs'] = out['rs'] + rel
     out['ss'] = out['ss'] + skip
@@ -147,7 +153,12 @@ end
 function add_stat_ops(stream)
 	local m = map()
 	m['count'] = 0
+	
 	m['ready'] = 0
+	m['buried'] = 0
+	m['delayed'] = 0
+	m['reserved'] = 0			
+	
 	m['js'] = 0
 	m['rs'] = 0
 	m['ss'] = 0
@@ -180,6 +191,10 @@ func (tube* Tube) Stats() (s *Stats, err error) {
 		
 			s.Jobs += results["count"].(int)
 			s.Ready += results["ready"].(int)
+			s.Buried += results["buried"].(int)
+			s.Delayed += results["delayed"].(int)	
+			s.Reserved += results["reserved"].(int)	
+								
 			s.JobSize += results["js"].(int)
 			s.UsedSize += results["rs"].(int)
 			s.SkippedSize += results["ss"].(int)
@@ -282,7 +297,7 @@ func (tube *Tube) Bury(id int64, reason []byte) (error) {
 		return err
 	}
 	
-	if record.Bins[AerospikeNameStatus] != AerospikeSymReserved {
+	if status := record.Bins[AerospikeNameStatus]; status != AerospikeSymReserved && status != AerospikeSymReservedTtr {
 		return errors.New("Job is not reserved")
 	}
 	
@@ -361,7 +376,6 @@ R:
 		}	
 	
 		defer recordset.Close()
-	
 		for res := range recordset.Results() {
 			if res.Err != nil {
 				if err == nil {
@@ -405,7 +419,8 @@ R:
 						return job, body, ttr, nil		
 					}		
 					// else something happened to this job in the way
-					fmt.Printf("Job lock failed due to %v", lockErr)
+					// TODO: Handle println
+					fmt.Printf("!!! Job lock failed due to %v\n", lockErr)
 				} else {
 					// if the key is nil or not an int something is wrong. WritePolicy is not set
 					// correctly. Skip this record and set err if this is the only record
@@ -417,7 +432,7 @@ R:
 		}
 		count, _ := tube.bumpReservedEntries(AerospikeAdminScanSize)
 		if count != 0 {
-			break R
+			continue R
 		}	
 	
 		// no jobs to return, use the cycles to admin the set
@@ -497,14 +512,13 @@ func (tube *Tube) shouldOperate(scan string) (bool) {
 	if err != nil {
 		return false
 	}
-
 	return true
 }
 
 // admin function to move RESERVED operations with a TTR to READY
 // if required
 func (tube *Tube) bumpReservedEntries(n int) (int, error) {
-	if !tube.shouldOperate("reservedttr") {
+	if !tube.shouldOperate(AerospikeKeySuffixTtr) {
 		// println("skipping operation")
 		return 0, nil
 	}
@@ -531,13 +545,15 @@ func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 	}
 	entries := make([]*Entry, 0, n)
 	keys := make([]*as.Key, 0, n)
+	
 	for res := range recordset.Results() {
 		if res.Err != nil {
 			return 0, err
 		}
-		
+
 		if binTtr := res.Record.Bins[AerospikeNameTtrKey]; binTtr != nil {
 			entry := binTtr.(string)
+
 			key, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, entry)
 			keys = append(keys, key)
 		
@@ -556,7 +572,7 @@ func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 	count := 0	
 	for i := 0; i < len(records); i++ {
 		record := records[i]
-		if record == nil {
+		if record == nil {		
 			// the reserve has expired
 			update := as.NewWritePolicy(entries[i].generation, 0)
 			update.RecordExistsAction = as.UPDATE_ONLY
@@ -581,7 +597,7 @@ func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 // admin function to move DELAYED operations to READY
 // returns the number of jobs processed and if any action was taken
 func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
-	if !tube.shouldOperate("delayed") {
+	if !tube.shouldOperate(AerospikeKeySuffixDelayed) {
 		// println("skipping operation")
 		return 0, nil
 	}

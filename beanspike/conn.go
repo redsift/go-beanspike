@@ -99,6 +99,12 @@ func (conn *Conn) Delete(name string) (error) {
 		}
 	}
 	
+	tk, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, name+":"+AerospikeKeySuffixTtr)	
+	client.Delete(nil, tk)
+
+	dk, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, name+":"+AerospikeKeySuffixDelayed)
+	client.Delete(nil, dk)
+		
 	err = client.DropIndex(nil, AerospikeNamespace, name, "idx_tube_"+name+"_"+AerospikeNameStatus)
 	
 	if err != nil {
