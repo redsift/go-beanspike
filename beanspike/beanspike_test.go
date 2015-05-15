@@ -3,10 +3,19 @@ package beanspike
 import (
 	"time"
 	"testing"
+	"crypto/rand"
+	"bytes"
+	"strings"
 )
 
 const unitTube = "unittesttube"
 const benchTube = "benchtesttube"
+
+
+// Hack to let AS stabilise after sleeps
+func deleteSleep() {
+	time.Sleep(2*time.Second)
+}
 
 func TestConnection(t *testing.T) {
 	_, err := DialDefault()
@@ -20,38 +29,139 @@ func TestConnection(t *testing.T) {
 
 func TestPut(t *testing.T) {
 	conn, _ := DialDefault()
+	err := conn.Delete(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}	
+	deleteSleep()
+	
 	tube, err := conn.Use(unitTube)
 	
 	if err != nil {
 		t.Fatal(err) 
 	}
-
-	id, err := tube.Put([]byte("hello"), 0, 0)
+	
+	id, err := tube.Put([]byte("hello"), 0, 0, false)
 	if err != nil {
 		t.Fatal(err) 
 	}
 	
 	err = tube.Touch(id)
 	if err == nil {
-		t.Fatal("Was able to touch a job that was not timeoutable") 
+		t.Fatal("Was able to touch a job that was not timeout-able") 
 	}	
 }
 
 func TestReserve(t *testing.T) {
 	conn, _ := DialDefault()
-	tube, err := conn.Use(unitTube)
+	err := conn.Delete(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}	
+	deleteSleep()
 	
+	tube, err := conn.Use(unitTube)
 	if err != nil {
 		t.Fatal(err) 
 	}
 
-	id, _, _, err := tube.Reserve()
+	payload := []byte("hello")
+	id, err := tube.Put(payload, 0, 0, false)
 	if err != nil {
 		t.Fatal(err) 
 	}
 	
+	id, body, _, err := tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}
 	if id == 0 {
 		t.Fatal("No job reserved")
+	}
+	if len(payload) != len(body) {
+		t.Fatalf("Job payload does not match expected size got:%v vs sent:%v", len(body), len(payload))		
+	}
+	if !bytes.Equal(payload, body) {
+		t.Fatal("Body do not match submitted payload")		
+	}
+}
+
+func TestReserveCompressedRnd(t *testing.T) {
+	conn, _ := DialDefault()
+	err := conn.Delete(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}	
+	deleteSleep()
+		
+	tube, err := conn.Use(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}
+
+	sz := 100*1024
+	payload := make([]byte, sz)
+	_, err = rand.Read(payload)
+	if err != nil {
+		t.Fatal(err) 
+	}	
+
+	id, err := tube.Put(payload, 0, 0, true)
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	id, body, _, err := tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}
+	if id == 0 {
+		t.Fatal("No job reserved")
+	}
+	//println("Rnd Job payload got:%v vs sent:%v", len(body), len(payload))
+	if len(payload) != len(body) {
+		t.Fatalf("Job payload does not match expected size got:%v vs sent:%v", len(body), len(payload))		
+	}
+	if !bytes.Equal(payload, body) {
+		t.Fatal("Body do not match submitted payload")		
+	}
+}
+
+
+func TestReserveCompressedStr(t *testing.T) {
+	conn, _ := DialDefault()
+	err := conn.Delete(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}	
+	deleteSleep()
+	
+	tube, err := conn.Use(unitTube)
+	if err != nil {
+		t.Fatal(err) 
+	}
+
+	sz := 100*1024
+	payload := []byte(strings.Repeat("R", sz))
+
+	id, err := tube.Put(payload, 0, 0, true)
+	if err != nil {
+		t.Fatal(err) 
+	}
+	
+	id, body, _, err := tube.Reserve()
+	if err != nil {
+		t.Fatal(err) 
+	}
+	if id == 0 {
+		t.Fatal("No job reserved")
+	}
+	//println("Str Job payload got:%v vs sent:%v", len(body), len(payload))
+	if len(payload) != len(body) {
+		t.Fatalf("Job payload does not match expected size got:%v vs sent:%v", len(body), len(payload))		
+	}
+	if !bytes.Equal(payload, body) {
+		t.Fatal("Body do not match submitted payload")		
 	}
 }
 
@@ -61,53 +171,53 @@ func TestPutTtr(t *testing.T) {
 	if err != nil {
 		t.Fatal(err) 
 	}
+	deleteSleep()
 		
 	tube, err := conn.Use(unitTube)
-	
 	if err != nil {
 		t.Fatal(err) 
 	}
 	
 	ttrVal := 1*time.Second
 	
-	id, err := tube.Put([]byte("hello"), 0, ttrVal)
+	// Make sure the Job it Put
+	id, err := tube.Put([]byte("hello"), 0, ttrVal, false)
 	if err != nil {
 		t.Fatal(err) 
 	}
-	
 	if id == 0 {
 		t.Fatal("No job put")
 	}
 	
+	// Make sure the Job was reserved
 	idR, _, ttr, err := tube.Reserve()
 	if err != nil {
 		t.Fatal(err) 
 	}
-	
 	if id != idR {
 		t.Fatalf("Wrong job reserved %v", idR)
 	}	
-	
 	if ttr != ttrVal {
 		t.Fatal("Wrong ttr value returned")	
 	}	
 	
+	// Make sure no job is available to be reserved
 	idR2, _, _, err := tube.Reserve()
 	if err != nil {
 		t.Fatal(err) 
 	}
-	
 	if idR2 != 0 {
-		t.Fatal("Unexpected job reserved")
+		t.Fatalf("Unexpected job reserved %v", idR2)
 	}	
 	
+	// Wait till the ttrVal has expired
 	time.Sleep(ttrVal*2)	
 	
+	// Make sure Job has timed out and can be reserved
 	idR3, _, _, err := tube.Reserve()
 	if err != nil {
 		t.Fatal(err) 
 	}
-	
 	if idR3 != id {
 		t.Fatalf("Job not reserved after ttr, got %v", idR3)
 	}	
@@ -119,6 +229,7 @@ func TestPutTouch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err) 
 	}
+	deleteSleep()
 		
 	tube, err := conn.Use(unitTube)
 	
@@ -128,7 +239,7 @@ func TestPutTouch(t *testing.T) {
 	
 	ttrVal := 2*time.Second
 	
-	id, err := tube.Put([]byte("hello"), 0, ttrVal)
+	id, err := tube.Put([]byte("hello"), 0, ttrVal, false)
 	if err != nil {
 		t.Fatal(err) 
 	}
@@ -172,11 +283,11 @@ func TestPutTouch(t *testing.T) {
 
 func TestRelease(t *testing.T) {
 	conn, _ := DialDefault()
-	
 	err := conn.Delete(unitTube)
 	if err != nil {
 		t.Fatal(err) 
 	}	
+	deleteSleep()
 	
 	tube, err := conn.Use(unitTube)
 	if err != nil {
@@ -185,7 +296,7 @@ func TestRelease(t *testing.T) {
 	
 	magicTtr := 42*time.Second
 	
-	id, err := tube.Put([]byte("hello"), 0, magicTtr)
+	id, err := tube.Put([]byte("hello"), 0, magicTtr, false)
 	if err != nil {
 		t.Fatal(err) 
 	}
@@ -233,12 +344,11 @@ func TestRelease(t *testing.T) {
 func TestDelete(t *testing.T) {
 	conn, _ := DialDefault()
 	tube, err := conn.Use(unitTube)
-	
 	if err != nil {
 		t.Fatal(err) 
 	}
-
-	id, err := tube.Put([]byte("to delete"), 0*time.Second, 120*time.Second)
+	
+	id, err := tube.Put([]byte("to delete"), 0*time.Second, 120*time.Second, false)
 	if err != nil {
 		t.Fatal(err) 
 	}
@@ -265,16 +375,17 @@ func TestDelete(t *testing.T) {
 func TestStats(t *testing.T) {
 	const jobs = 20
 	conn, _ := DialDefault()
-
 	err := conn.Delete(unitTube)
 	if err != nil {
 		t.Fatal(err) 
 	}		
+	deleteSleep()
+		
 	tube, _ := conn.Use(unitTube)
 	
 	// Submit `jobs` jobs, reserve 1
 	for i := 0; i < jobs; i++ {
-		_, err = tube.Put([]byte("to count"), 0, 0)
+		_, err = tube.Put([]byte("to count"), 0, 0, false)
 		if err != nil {
 			t.Fatal(err) 
 		}
@@ -304,15 +415,15 @@ func TestStats(t *testing.T) {
 func TestShouldOperate(t *testing.T) {
 	const unitkey = "unittest"
 	conn, _ := DialDefault()
-	
 	err := conn.Delete(unitTube)
 	if err != nil {
 		t.Fatal(err) 
-	}	
+	}			
 	err = conn.Delete(unitTube+"alt")
 	if err != nil {
 		t.Fatal(err) 
 	}	
+	deleteSleep()
 			
 	tube1, err := conn.Use(unitTube)
 	if err != nil {
@@ -348,14 +459,15 @@ func TestShouldOperate(t *testing.T) {
 
 func TestBumpDelayed(t *testing.T) {
 	conn, _ := DialDefault()
-	
 	conn.Delete(unitTube)
+	deleteSleep()
+		
 	tube, err := conn.Use(unitTube)
 	if err != nil {
 		t.Fatal(err) 
 	}
 	delay := AerospikeAdminDelay + 1
-	idJ, err := tube.Put([]byte("hello"), time.Duration(delay)*time.Second, 0)
+	idJ, err := tube.Put([]byte("hello"), time.Duration(delay)*time.Second, 0, false)
 	if err != nil {
 		t.Fatal(err) 
 	}
@@ -409,15 +521,16 @@ var result int64
 // Sitting at 600us / put
 func BenchmarkPut(b *testing.B) {
 	conn, _ := DialDefault()
-	
 	conn.Delete(benchTube)
+	deleteSleep()
+		
 	tube, _ := conn.Use(benchTube)
 	
 	val := []byte("hello")
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		_, err := tube.Put(val, 0, 0)
+		_, err := tube.Put(val, 0, 0, false)
 		if err != nil {
 			b.Fatalf("Error putting Job. %v", err)
 		}	
@@ -428,13 +541,14 @@ func BenchmarkPut(b *testing.B) {
 // Sitting at 16ms / reserve
 func BenchmarkReserve(b *testing.B) {
 	conn, _ := DialDefault()
-	
 	conn.Delete(benchTube)
+	deleteSleep()
+		
 	tube, _ := conn.Use(benchTube)
 	
 	val := []byte("hello")
 	for n := 0; n < b.N; n++ {
-		tube.Put(val, 0, 0)
+		tube.Put(val, 0, 0, false)
 	}
 	
 	var id int64
@@ -453,13 +567,14 @@ func BenchmarkReserve(b *testing.B) {
 
 func BenchmarkRelease(b *testing.B) {
 	conn, _ := DialDefault()
-	
 	conn.Delete(benchTube)
+	deleteSleep()
+
 	tube, _ := conn.Use(benchTube)
 	
 	val := []byte("hello")
 	for n := 0; n < b.N; n++ {
-		tube.Put(val, 0, 0)
+		tube.Put(val, 0, 0, false)
 	}
 	ids := make([]int64, b.N)
 	for n := 0; n < b.N; n++ {

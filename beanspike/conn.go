@@ -52,11 +52,14 @@ func (conn *Conn) Use(name string) (*Tube, error) {
 		}
 	}
 	
-	if task != nil {
-		err = <- task.OnComplete() 
-		if err != nil {
-			return nil, err
-		}
+	if task == nil {
+		//TODO: Check that this is ok
+	} else {
+		for ierr := range task.OnComplete() {
+			if ierr != nil {
+				return nil, ierr
+			}
+		}	
 	}
 	
 	tube := new(Tube)

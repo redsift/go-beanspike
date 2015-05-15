@@ -7,9 +7,10 @@ import (
 	"strconv"			
 	as "github.com/aerospike/aerospike-client-go"
 	pt "github.com/aerospike/aerospike-client-go/types/particle_type"
+	lz4 "github.com/cloudflare/golz4"
 )
 
-func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration) (id int64, err error) {
+func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bool) (id int64, err error) {
 	id, err = tube.Conn.newJobId()
 	if err != nil {
 		return 0, err
@@ -19,8 +20,6 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration) (id i
 	if err != nil {
 		return 0, err
 	}
-
-	binBody := as.NewBin(AerospikeNameBody, body)
 	
 	policy := as.NewWritePolicy(0, 0)
 	policy.RecordExistsAction = as.CREATE_ONLY
@@ -29,8 +28,35 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration) (id i
 	
 	client := tube.Conn.aerospike
 	
-	bins := make([]*as.Bin, 0, 6)
-	bins = append(bins, binBody)
+	bins := make([]*as.Bin, 0, 8)
+	
+	binOrigSize := as.NewBin(AerospikeNameSize, len(body))
+	bins = append(bins, binOrigSize)
+	
+	if lz && shouldCompress(body) {
+		cbody, err := compress(body)
+		if err != nil {
+			return 0, err
+		}		
+		
+		if len(cbody) >= len(body) {
+			// incompressible, leave it raw, marked with a -value for AerospikeNameCompressedSize
+			binBody := as.NewBin(AerospikeNameBody, body)
+			bins = append(bins, binBody)
+		
+			binCompressedSize := as.NewBin(AerospikeNameCompressedSize, -len(cbody))
+			bins = append(bins, binCompressedSize)		
+		} else {
+			binBody := as.NewBin(AerospikeNameBody, cbody)
+			bins = append(bins, binBody)
+		
+			binCompressedSize := as.NewBin(AerospikeNameCompressedSize, len(cbody))
+			bins = append(bins, binCompressedSize)			
+		}
+	} else {
+		binBody := as.NewBin(AerospikeNameBody, body)
+		bins = append(bins, binBody)
+	}
 	
 	if delay == 0 {
 		binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
@@ -291,7 +317,7 @@ func (tube *Tube) KickJob(id int64) (error) {
 func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, err error) {
 	client := tube.Conn.aerospike
 	
-	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr)
+	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr, AerospikeNameCompressedSize, AerospikeNameSize)
 	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
 	
 	policy := as.NewQueryPolicy()
@@ -313,7 +339,11 @@ R:
 					err = res.Err
 				}
 			} else {
-				body := res.Record.Bins[AerospikeNameBody]
+				var body[]byte
+				bodyVal := res.Record.Bins[AerospikeNameBody]
+				if bodyVal != nil {
+					body = bodyVal.([]byte)
+				}
 				ttr = 0
 				
 				reserve := AerospikeSymReserved
@@ -326,8 +356,24 @@ R:
 				
 					lockErr := tube.attemptJobReservation(res.Record, reserve)
 					if lockErr == nil {
+						if czValue := res.Record.Bins[AerospikeNameCompressedSize]; czValue != nil {
+							cz := czValue.(int)
+							if cz > 0 {
+							
+								if ozValue := res.Record.Bins[AerospikeNameSize]; ozValue != nil {
+									// was compressed
+									body, err = decompress(body, ozValue.(int))
+									if err != nil {
+										return 0, nil, 0, err	
+									}
+								} else {
+									return 0, nil, 0, errors.New("Could not establish original size of compressed content")
+								}
+							}
+						}
+					
 						// success, we have this job
-						return job, body.([]byte), ttr, nil		
+						return job, body, ttr, nil		
 					}		
 					// else something happened to this job in the way
 					fmt.Printf("Job lock failed due to %v", lockErr)
@@ -460,12 +506,15 @@ func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 		if res.Err != nil {
 			return 0, err
 		}
-		entry := res.Record.Bins[AerospikeNameTtrKey].(string)
-		key, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, entry)
-		keys = append(keys, key)
 		
-		val := &Entry{int32(res.Record.Generation), res.Record.Key}
-		entries = append(entries, val)		
+		if binTtr := res.Record.Bins[AerospikeNameTtrKey]; binTtr != nil {
+			entry := binTtr.(string)
+			key, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, entry)
+			keys = append(keys, key)
+		
+			val := &Entry{int32(res.Record.Generation), res.Record.Key}
+			entries = append(entries, val)		
+		}
 	}
 	
 	batch := as.NewPolicy()
@@ -597,6 +646,34 @@ func registerUDFs(client* as.Client) (error) {
 	}
 	
 	return nil
+}
+
+func shouldCompress(body []byte) (bool) {
+	// Don't compress small payloads
+	return len(body) > CompressionSizeThreshold
+}
+
+func decompress(body []byte, outlen int) ([]byte, error) {
+	decompressed := make([]byte, outlen)
+	
+	err := lz4.Uncompress(body, decompressed)
+	if err != nil {
+		return nil, err
+	}
+	
+	return decompressed, nil
+}
+
+func compress(body []byte) ([]byte, error) {
+	cbody := make([]byte, lz4.CompressBound(body))
+	sz, err := lz4.Compress(body, cbody)
+	if err != nil {
+		return nil, err
+	}
+	if sz == 0 {
+		return nil, errors.New("Failed to produce compressed output")
+	}	
+	return cbody[:sz], nil
 }
 
 

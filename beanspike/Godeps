@@ -1,2 +1,3 @@
 # deps managed by gpm
 github.com/aerospike/aerospike-client-go	v1.5.0
+github.com/cloudflare/golz4					ef862a3cdc58a6f1fee4e3af3d44fbe279194cde

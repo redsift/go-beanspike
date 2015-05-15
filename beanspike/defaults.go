@@ -8,6 +8,8 @@ const (
 	// TODO change this
 	AerospikeNamespace = "test"
 	
+	CompressionSizeThreshold = 1024 * 2
+	
 	// run admin operations at most 1/10 seconds
 	AerospikeAdminDelay = 2
 	AerospikeAdminScanSize = 50
@@ -23,6 +25,9 @@ const (
 	AerospikeNameTtr = "ttr"
 	AerospikeNameTtrKey = "ttrkey"
 	AerospikeNameTtrValue = "seconds" // these are not used, review
+	AerospikeNameCompressedSize = "csize"
+	AerospikeNameSize = "size"
+	
 	// For the scan policy
 	AerospikeQueryQueueSize = 4
 
