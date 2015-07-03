@@ -1,61 +1,58 @@
 package beanspike
 
 import (
-	"os"
-	"strconv"
-	"errors"
 	"fmt"
+	"os"
 	"regexp"
+	"strconv"
 	"sync/atomic"
+
 	as "github.com/aerospike/aerospike-client-go"
 )
 
 type Conn struct {
-	aerospike	*as.Client
-	clientId	string
+	aerospike *as.Client
+	clientId  string
 }
 
 type Tube struct {
-	Conn 	*Conn
-	Name 	string
+	Conn *Conn
+	Name string
 }
 
 type Stats struct {
-	Jobs 		int
-	Ready		int
-	Buried		int
-	Delayed		int
-	Reserved	int
-	JobSize		int
-	UsedSize	int
-	SkippedSize	int
+	Jobs        int
+	Ready       int
+	Buried      int
+	Delayed     int
+	Reserved    int
+	JobSize     int
+	UsedSize    int
+	SkippedSize int
 }
 
 func DialDefault() (*Conn, error) {
-	var (
-		host string
-		port int
-	)
-	
-	if host = os.Getenv(AerospikeHostEnv); host == "" {
-		host = AerospikeHost
+	host := AerospikeHost
+	port := AerospikePort
+
+	if h := os.Getenv(AerospikeHostEnv); h != "" {
+		host = h
 	}
 
-	if portStr := os.Getenv(AerospikePortEnv); portStr != "" {
-		dockerHost, envPort, err := parsePort(portStr)
+	if p := os.Getenv(AerospikePortEnv); p != "" {
+		var dh string
+		var err error
+		dh, port, err = parsePort(p)
 		if err != nil {
-			return nil, errors.New(fmt.Sprintf("invalid environment variable %v. %v", AerospikePortEnv, err))
-		} else {
-			port = envPort
-			if dockerHost != "" {
-				// note, this overrides AerospikeHostEnv
-				host = dockerHost
-			}
+			return nil, fmt.Errorf("invalid environment variable %v. %v", AerospikePortEnv, err)
 		}
-	} else {
-		port = AerospikePort
+
+		if dh != "" {
+			// Docker specified Host in the port env overrides AerospikeHostEnv
+			host = dh
+		}
 	}
-	
+
 	return Dial("", host, port)
 }
 
@@ -75,33 +72,32 @@ func Dial(id string, host string, port int) (*Conn, error) {
 		return nil, err
 	}
 
-	c := new(Conn)
-	c.aerospike = client
-	c.clientId = id
-	
-    return c, nil
+	return &Conn{
+		aerospike: client,
+		clientId:  id,
+	}, nil
+
 }
 
 var instanceCount int32 = 0
 
-func genId() (string) {
+func genId() string {
 	count := atomic.AddInt32(&instanceCount, 1)
-	
+
 	pid := os.Getpid()
-	
+
 	if host, err := os.Hostname(); err == nil {
 		return fmt.Sprintf("%v:%v:%v", host, pid, count)
 	}
-	return fmt.Sprintf("????????:%v:%v", pid, count)	
+	return fmt.Sprintf("????????:%v:%v", pid, count)
 }
+
+var portRE = regexp.MustCompile(`^tcp:\/\/(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b):(\d{1,5})$`)
 
 // Parse port check is the port var is actually a Docker ENV
 // as this can easily happen
 func parsePort(portStr string) (host string, port int, err error) {
-	host = ""
-
-	r := regexp.MustCompile(`^tcp:\/\/(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b):(\d{1,5})$`)
-	match := r.FindAllStringSubmatch(portStr, -1)
+	match := portRE.FindAllStringSubmatch(portStr, -1)
 	if match != nil {
 		// Docker style port ENV
 		host = match[0][1]
@@ -109,7 +105,5 @@ func parsePort(portStr string) (host string, port int, err error) {
 	}
 
 	port, err = strconv.Atoi(portStr)
-
-	return host, port, err			
+	return host, port, err
 }
-

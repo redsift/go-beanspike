@@ -8,6 +8,6 @@ import (
 )
 
 type MessageBus interface {
-    Notify(symbol string, items int)
-    WaitFor(symbol string, timeout time.Duration) (chan int)
+	Notify(symbol string, items int)
+	WaitFor(symbol string, timeout time.Duration) chan int
 }
