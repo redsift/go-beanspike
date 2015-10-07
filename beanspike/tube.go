@@ -631,7 +631,13 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 		if res.Err != nil {
 			return 0, err
 		}
-		entry := res.Record.Bins[AerospikeNameDelay].(string)
+		delay := res.Record.Bins[AerospikeNameDelay]
+		if delay == nil {
+			// TODO: Looks like this might need cleanup.
+			continue
+		}
+
+		entry := delay.(string)
 		key, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, entry)
 		keys = append(keys, key)
 
