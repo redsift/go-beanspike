@@ -11,6 +11,8 @@ import (
 	lz4 "github.com/cloudflare/golz4"
 )
 
+var ErrEmptyRecord = errors.New("ASSERT: Record empty")
+
 func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bool) (id int64, err error) {
 	id, err = tube.Conn.newJobId()
 	if err != nil {
@@ -221,8 +223,12 @@ func (tube *Tube) Touch(id int64) error {
 	if err != nil {
 		return err
 	}
+	if record == nil {
+		return ErrEmptyRecord
+	}
 
 	ttrValue := record.Bins[AerospikeNameTtr]
+
 	if record.Bins[AerospikeNameTtrKey] == nil || ttrValue == nil {
 		return errors.New("Job does not need Touching")
 	}
@@ -256,6 +262,9 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 	record, err := client.Get(nil, key, AerospikeNameStatus, AerospikeNameBy)
 	if err != nil {
 		return err
+	}
+	if record == nil {
+		return ErrEmptyRecord
 	}
 
 	if status := record.Bins[AerospikeNameStatus]; status != AerospikeSymReserved && status != AerospikeSymReservedTtr {
@@ -296,6 +305,9 @@ func (tube *Tube) Bury(id int64, reason []byte) error {
 	record, err := client.Get(nil, key, AerospikeNameStatus, AerospikeNameBy)
 	if err != nil {
 		return err
+	}
+	if record == nil {
+		return ErrEmptyRecord
 	}
 
 	if status := record.Bins[AerospikeNameStatus]; status != AerospikeSymReserved && status != AerospikeSymReservedTtr {
@@ -339,6 +351,9 @@ func (tube *Tube) KickJob(id int64) error {
 	record, err := client.Get(nil, key, AerospikeNameStatus)
 	if err != nil {
 		return err
+	}
+	if record == nil {
+		return ErrEmptyRecord
 	}
 
 	if status := record.Bins[AerospikeNameStatus]; status != AerospikeSymBuried || status != AerospikeSymDelayed {
