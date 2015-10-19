@@ -599,8 +599,8 @@ func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 
 			binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
 			// removing Delay may not be required
-			binTtrKey := as.NewBin(AerospikeNameTtrKey, as.NewNullValue())
-			err := client.PutBins(update, entries[i].key, binStatus, binTtrKey)
+			// binTtrKey := as.NewBin(AerospikeNameTtrKey, as.NewNullValue())
+			err := client.PutBins(update, entries[i].key, binStatus)
 			if err != nil {
 				return count, err
 			}
