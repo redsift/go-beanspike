@@ -1,12 +1,11 @@
 package beanspike
 
 const (
-	AerospikeHost    = "aerospike"
-	AerospikePort    = 3000
-	AerospikeHostEnv = "AEROSPIKE_HOST"
-	AerospikePortEnv = "AEROSPIKE_PORT"
-	// TODO change this
-	AerospikeNamespace = "test"
+	AerospikeHost      = "aerospike"
+	AerospikePort      = 3000
+	AerospikeHostEnv   = "AEROSPIKE_HOST"
+	AerospikePortEnv   = "AEROSPIKE_PORT"
+	AerospikeNamespace = "beanspike"
 
 	CompressionSizeThreshold = 1024 * 2
 
