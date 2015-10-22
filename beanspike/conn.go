@@ -4,10 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	as "github.com/aerospike/aerospike-client-go"
 	ast "github.com/aerospike/aerospike-client-go/types"
 )
+
+var rwMutex = sync.RWMutex{}
+
+var tubesMap = map[string]*Tube{}
 
 func (conn *Conn) newJobId() (int64, error) {
 	key, err := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, "seq")
@@ -42,6 +47,24 @@ func (conn *Conn) Use(name string) (*Tube, error) {
 		return nil, errors.New(fmt.Sprintf("Tube name %v is reserved", name))
 	}
 
+	rwMutex.RLock()
+	t := tubesMap[name]
+	if t != nil {
+		rwMutex.RUnlock()
+		return t, nil
+	}
+	rwMutex.RUnlock()
+
+	rwMutex.Lock()
+	defer func() {
+		rwMutex.Unlock()
+	}()
+
+	t = tubesMap[name]
+	if t != nil {
+		return t, nil
+	}
+
 	task, err := conn.aerospike.CreateIndex(nil, AerospikeNamespace, name, "idx_tube_"+name+"_"+AerospikeNameStatus, AerospikeNameStatus, as.STRING)
 	if err != nil {
 		if ae, ok := err.(ast.AerospikeError); ok && ae.ResultCode() == ast.INDEX_FOUND {
@@ -67,6 +90,7 @@ func (conn *Conn) Use(name string) (*Tube, error) {
 	tube.Name = name
 	tube.first = true
 
+	tubesMap[name] = tube
 	return tube, nil
 }
 
