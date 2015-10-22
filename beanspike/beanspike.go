@@ -16,8 +16,9 @@ type Conn struct {
 }
 
 type Tube struct {
-	Conn *Conn
-	Name string
+	Conn  *Conn
+	Name  string
+	first bool
 }
 
 type Stats struct {

@@ -65,6 +65,7 @@ func (conn *Conn) Use(name string) (*Tube, error) {
 	tube := new(Tube)
 	tube.Conn = conn
 	tube.Name = name
+	tube.first = true
 
 	return tube, nil
 }

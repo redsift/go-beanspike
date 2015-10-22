@@ -379,7 +379,13 @@ func (tube *Tube) KickJob(id int64) error {
 func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, err error) {
 	client := tube.Conn.aerospike
 
-	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr, AerospikeNameCompressedSize, AerospikeNameSize)
+	if tube.first {
+		tube.first = false
+
+		tube.bumpReservedEntries(AerospikeAdminScanSize)
+	}
+
+	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr, AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus)
 	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
 
 	policy := as.NewQueryPolicy()
@@ -407,15 +413,20 @@ R:
 				}
 				ttr = 0
 
+				var binTtrExp *as.Bin
 				reserve := AerospikeSymReserved
 				if ttrValue := res.Record.Bins[AerospikeNameTtr]; ttrValue != nil {
 					ttr = time.Duration(ttrValue.(int)) * time.Second
 					reserve = AerospikeSymReservedTtr
+					binTtrExp, err = tube.timeJob(id, ttr)
+					if err != nil {
+						return 0, nil, 0, err
+					}
 				}
 				if key := res.Record.Key.Value(); key != nil && key.GetType() == pt.INTEGER && body != nil {
 					job := res.Record.Key.Value().GetObject().(int64)
 
-					lockErr := tube.attemptJobReservation(res.Record, reserve)
+					lockErr := tube.attemptJobReservation(res.Record, reserve, binTtrExp)
 					if lockErr == nil {
 						if czValue := res.Record.Bins[AerospikeNameCompressedSize]; czValue != nil {
 							cz := czValue.(int)
@@ -693,14 +704,19 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 	return count, nil
 }
 
-func (tube *Tube) attemptJobReservation(record *as.Record, status string) (err error) {
+func (tube *Tube) attemptJobReservation(record *as.Record, status string, binTtrExp *as.Bin) (err error) {
 	writePolicy := as.NewWritePolicy(int32(record.Generation), 0)
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
 
-	binStatus := as.NewBin(AerospikeNameStatus, status)
-	binBy := as.NewBin(AerospikeNameBy, tube.Conn.clientId)
-	return tube.Conn.aerospike.PutBins(writePolicy, record.Key, binStatus, binBy)
+	bins := make([]*as.Bin, 0, 3)
+
+	bins = append(bins, as.NewBin(AerospikeNameStatus, status))
+	bins = append(bins, as.NewBin(AerospikeNameBy, tube.Conn.clientId))
+	if binTtrExp != nil {
+		bins = append(bins, binTtrExp)
+	}
+	return tube.Conn.aerospike.PutBins(writePolicy, record.Key, bins...)
 }
 
 func registerUDFs(client *as.Client) error {
