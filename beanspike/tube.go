@@ -413,18 +413,19 @@ R:
 				}
 				ttr = 0
 
-				var binTtrExp *as.Bin
-				reserve := AerospikeSymReserved
-				if ttrValue := res.Record.Bins[AerospikeNameTtr]; ttrValue != nil {
-					ttr = time.Duration(ttrValue.(int)) * time.Second
-					reserve = AerospikeSymReservedTtr
-					binTtrExp, err = tube.timeJob(id, ttr)
-					if err != nil {
-						return 0, nil, 0, err
-					}
-				}
 				if key := res.Record.Key.Value(); key != nil && key.GetType() == pt.INTEGER && body != nil {
 					job := res.Record.Key.Value().GetObject().(int64)
+
+					var binTtrExp *as.Bin
+					reserve := AerospikeSymReserved
+					if ttrValue := res.Record.Bins[AerospikeNameTtr]; ttrValue != nil {
+						ttr = time.Duration(ttrValue.(int)) * time.Second
+						reserve = AerospikeSymReservedTtr
+						binTtrExp, err = tube.timeJob(job, ttr)
+						if err != nil {
+							return 0, nil, 0, err
+						}
+					}
 
 					lockErr := tube.attemptJobReservation(res.Record, reserve, binTtrExp)
 					if lockErr == nil {
