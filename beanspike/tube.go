@@ -515,7 +515,7 @@ func (tube *Tube) timeJob(id int64, ttr time.Duration) (*as.Bin, error) {
 	}
 
 	policy := as.NewWritePolicy(0, int32(ttr.Seconds()))
-	policy.RecordExistsAction = as.REPLACE
+	policy.RecordExistsAction = as.CREATE_ONLY
 	policy.CommitLevel = as.COMMIT_MASTER
 
 	ttrBin := as.NewBin(AerospikeNameTtrValue, int32(ttr.Seconds()))
