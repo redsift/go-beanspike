@@ -78,11 +78,6 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 	if ttr != 0 {
 		binTtr := as.NewBin(AerospikeNameTtr, int64(ttr.Seconds()))
 		bins = append(bins, binTtr)
-		binTtrExp, err := tube.timeJob(id, ttr)
-		if err != nil {
-			return 0, err
-		}
-		bins = append(bins, binTtrExp)
 	}
 
 	err = client.PutBins(policy, key, bins...)
