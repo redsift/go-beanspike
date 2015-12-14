@@ -241,7 +241,7 @@ func (tube *Tube) Touch(id int64) error {
 		return err
 	}
 
-	policy := as.NewWritePolicy(0, int32(ttrValue.(int)))
+	policy := as.NewWritePolicy(0, uint32(ttrValue.(int)))
 	policy.CommitLevel = as.COMMIT_MASTER
 	return client.Touch(policy, touch)
 }
@@ -270,7 +270,7 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 		return errors.New("Job is not reserved by this client")
 	}
 
-	writePolicy := as.NewWritePolicy(int32(record.Generation), 0)
+	writePolicy := as.NewWritePolicy(record.Generation, 0)
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
 
@@ -313,7 +313,7 @@ func (tube *Tube) Bury(id int64, reason []byte) error {
 		return errors.New("Job is not reserved by this client")
 	}
 
-	writePolicy := as.NewWritePolicy(int32(record.Generation), 0)
+	writePolicy := as.NewWritePolicy(record.Generation, 0)
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
 
@@ -356,7 +356,7 @@ func (tube *Tube) KickJob(id int64) error {
 		return errors.New("Job is not buried or delayed")
 	}
 
-	writePolicy := as.NewWritePolicy(int32(record.Generation), 0)
+	writePolicy := as.NewWritePolicy(record.Generation, 0)
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
 
@@ -485,7 +485,7 @@ func (tube *Tube) delayJob(id int64, delay time.Duration) (*as.Bin, error) {
 		return nil, errors.New("No delay key generated")
 	}
 
-	policy := as.NewWritePolicy(0, int32(delay.Seconds()))
+	policy := as.NewWritePolicy(0, uint32(delay.Seconds()))
 	policy.RecordExistsAction = as.CREATE_ONLY
 	policy.CommitLevel = as.COMMIT_MASTER
 
@@ -510,7 +510,7 @@ func (tube *Tube) timeJob(id int64, ttr time.Duration) (*as.Bin, error) {
 		return nil, errors.New("No ttr key generated")
 	}
 
-	policy := as.NewWritePolicy(0, int32(ttr.Seconds()))
+	policy := as.NewWritePolicy(0, uint32(ttr.Seconds()))
 	policy.RecordExistsAction = as.CREATE_ONLY
 	policy.CommitLevel = as.COMMIT_MASTER
 
@@ -564,7 +564,7 @@ func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 
 	defer recordset.Close()
 	type Entry struct {
-		generation int32
+		generation uint32
 		key        *as.Key
 	}
 	entries := make([]*Entry, 0, n)
@@ -581,7 +581,7 @@ func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 			key, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, entry)
 			keys = append(keys, key)
 
-			val := &Entry{int32(res.Record.Generation), res.Record.Key}
+			val := &Entry{res.Record.Generation, res.Record.Key}
 			entries = append(entries, val)
 		}
 	}
@@ -644,7 +644,7 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 	defer recordset.Close()
 
 	type Entry struct {
-		generation int32
+		generation uint32
 		key        *as.Key
 	}
 	entries := make([]*Entry, 0, n)
@@ -663,7 +663,7 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 		key, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, entry)
 		keys = append(keys, key)
 
-		val := &Entry{int32(res.Record.Generation), res.Record.Key}
+		val := &Entry{res.Record.Generation, res.Record.Key}
 		entries = append(entries, val)
 	}
 
@@ -701,7 +701,7 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 }
 
 func (tube *Tube) attemptJobReservation(record *as.Record, status string, binTtrExp *as.Bin) (err error) {
-	writePolicy := as.NewWritePolicy(int32(record.Generation), 0)
+	writePolicy := as.NewWritePolicy(record.Generation, 0)
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
 
