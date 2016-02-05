@@ -115,56 +115,6 @@ func (tube *Tube) Delete(id int64) (bool, error) {
 	return tube.Conn.aerospike.Delete(nil, key)
 }
 
-const statsLua = `
-local function aggregate_stats(out, rec)
-	local st = rec['status']
-    if st == 'READY' then
-    	 out['ready'] = out['ready'] + 1
-    elseif st == 'BURIED' then
-    	 out['buried'] = out['buried'] + 1
-    elseif st == 'DELAYED' then
-    	 out['delayed'] = out['delayed'] + 1 
-	else
-		 out['reserved'] = out['reserved'] + 1
-    end
-    local rel = rec['size']
-    local skip = 0
-    
-    local cz = rec['csize'] 
-    if cz then
-    	if cz > 0 then
-    		rel = cz
-    	else
-    		skip = -cz
-    	end
-    end
-    
-    out['count'] = out['count'] + 1
-   
-    out['js'] = out['js'] + rec['size']
-    out['rs'] = out['rs'] + rel
-    out['ss'] = out['ss'] + skip
-            
-    return out
-end
-
-function add_stat_ops(stream)
-	local m = map()
-	m['count'] = 0
-	
-	m['ready'] = 0
-	m['buried'] = 0
-	m['delayed'] = 0
-	m['reserved'] = 0			
-	
-	m['js'] = 0
-	m['rs'] = 0
-	m['ss'] = 0
-		
-    return stream : aggregate(m, aggregate_stats)
-end
-`
-
 func (tube *Tube) Stats() (s *Stats, err error) {
 	stm := as.NewStatement(AerospikeNamespace, tube.Name)
 	stm.SetAggregateFunction("beanspikeStats", "add_stat_ops", nil, true)
@@ -716,13 +666,16 @@ func (tube *Tube) attemptJobReservation(record *as.Record, status string, binTtr
 }
 
 func registerUDFs(client *as.Client) error {
-	regTask, err := client.RegisterUDF(nil, []byte(statsLua), "beanspikeStats.lua", as.LUA)
-	if err != nil {
-		return err
-	}
-	err = <-regTask.OnComplete()
-	if err != nil {
-		return err
+	for _ = range time.Tick(100 * time.Millisecond) {
+		udfs, err := client.ListUDF(nil)
+		if err != nil {
+			return err
+		}
+		for _, udf := range udfs {
+			if udf.Filename == "setupDone.lua" {
+				return nil
+			}
+		}
 	}
 
 	return nil
