@@ -421,6 +421,80 @@ R:
 	return 0, nil, 0, err
 }
 
+func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason []byte, err error) {
+	client := tube.Conn.aerospike
+
+	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr, AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameReason)
+	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymBuried))
+
+	policy := as.NewQueryPolicy()
+	policy.RecordQueueSize = AerospikeQueryQueueSize
+
+	for i := 0; i < 2; i++ {
+		recordset, err := client.Query(policy, stm)
+
+		if err != nil {
+			return 0, nil, 0, nil, err
+		}
+
+		defer recordset.Close()
+		for res := range recordset.Results() {
+			if res.Err != nil {
+				if err == nil {
+					err = res.Err
+				}
+			} else {
+				var body []byte
+				bodyVal := res.Record.Bins[AerospikeNameBody]
+				if bodyVal != nil {
+					body = bodyVal.([]byte)
+				}
+				ttr = 0
+
+				if key := res.Record.Key.Value(); key != nil && key.GetType() == pt.INTEGER && body != nil {
+					job := res.Record.Key.Value().GetObject().(int64)
+
+					if ttrValue := res.Record.Bins[AerospikeNameTtr]; ttrValue != nil {
+						ttr = time.Duration(ttrValue.(int)) * time.Second
+					}
+
+					if czValue := res.Record.Bins[AerospikeNameCompressedSize]; czValue != nil {
+						cz := czValue.(int)
+						if cz > 0 {
+
+							if ozValue := res.Record.Bins[AerospikeNameSize]; ozValue != nil {
+								// was compressed
+								body, err = decompress(body, ozValue.(int))
+								if err != nil {
+									return 0, nil, 0, nil, err
+								}
+							} else {
+								return 0, nil, 0, nil, errors.New("Could not establish original size of compressed content")
+							}
+						}
+					}
+
+					if reasonValue := res.Record.Bins[AerospikeNameReason]; reasonValue != nil {
+						reason = reasonValue.([]byte)
+					}
+
+					// success, we have this job
+					return job, body, ttr, reason, nil
+				} else {
+					// if the key is nil or not an int something is wrong. WritePolicy is not set
+					// correctly. Skip this record and set err if this is the only record
+					if err == nil {
+						err = errors.New("Missing appropriate entry in job tube")
+					}
+				}
+			}
+		}
+	}
+
+	// Some form of error or no job fall through
+	return 0, nil, 0, nil, err
+}
+
 // this could be done in the future with UDFs triggered on expiry
 // note, delays are defined as best effort delay
 func (tube *Tube) delayJob(id int64, delay time.Duration) (*as.Bin, error) {
