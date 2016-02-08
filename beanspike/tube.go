@@ -113,6 +113,21 @@ func (tube *Tube) Delete(id int64) (bool, error) {
 		return false, err
 	}
 
+	// nil out body before deleting record to address aerospike limitations.
+	// Ref: https://discuss.aerospike.com/t/expired-deleted-data-reappears-after-server-is-restarted/470
+	policy := as.NewWritePolicy(0, 0)
+	policy.RecordExistsAction = as.UPDATE_ONLY
+	policy.SendKey = true
+	policy.CommitLevel = as.COMMIT_MASTER
+
+	binBody := as.NewBin(AerospikeNameBody, nil)
+	binCSize := as.NewBin(AerospikeNameCompressedSize, nil)
+
+	err = tube.Conn.aerospike.PutBins(policy, key, binBody, binCSize)
+	if err != nil {
+		return false, err
+	}
+
 	return tube.Conn.aerospike.Delete(nil, key)
 }
 
@@ -397,6 +412,13 @@ R:
 					// TODO: Handle println
 					fmt.Printf("!!! Job lock failed due to %v\n", lockErr)
 				} else {
+					if body == nil && key != nil {
+						jobID := key.GetObject().(int64)
+						// Empty body signifies deleted job for us. Ref: Delete()
+						tube.deleteZombie(jobID)
+						continue
+					}
+
 					// if the key is nil or not an int something is wrong. WritePolicy is not set
 					// correctly. Skip this record and set err if this is the only record
 					if err == nil {
@@ -451,8 +473,9 @@ func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason
 				}
 				ttr = 0
 
-				if key := res.Record.Key.Value(); key != nil && key.GetType() == pt.INTEGER && body != nil {
-					job := res.Record.Key.Value().GetObject().(int64)
+				key := res.Record.Key.Value()
+				if key != nil && key.GetType() == pt.INTEGER && body != nil {
+					job := key.GetObject().(int64)
 
 					if ttrValue := res.Record.Bins[AerospikeNameTtr]; ttrValue != nil {
 						ttr = time.Duration(ttrValue.(int)) * time.Second
@@ -481,6 +504,13 @@ func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason
 					// success, we have this job
 					return job, body, ttr, reason, nil
 				} else {
+					if body == nil && key != nil {
+						jobID := key.GetObject().(int64)
+						// Empty body signifies deleted job for us. Ref: Delete()
+						tube.deleteZombie(jobID)
+						continue
+					}
+
 					// if the key is nil or not an int something is wrong. WritePolicy is not set
 					// correctly. Skip this record and set err if this is the only record
 					if err == nil {
@@ -493,6 +523,13 @@ func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason
 
 	// Some form of error or no job fall through
 	return 0, nil, 0, nil, err
+}
+
+func (tube *Tube) deleteZombie(id int64) (bool, error) {
+	// TODO: Handle println
+	fmt.Println("Got a zombie job, deleting and continuing...", id)
+	// TODO: Log to statsd
+	return tube.Delete(id)
 }
 
 // this could be done in the future with UDFs triggered on expiry
