@@ -12,6 +12,7 @@ import (
 )
 
 var ErrEmptyRecord = errors.New("ASSERT: Record empty")
+var ErrNotBuriedOrDelayed = errors.New("Job is not buried or delayed")
 
 func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bool) (id int64, err error) {
 	id, err = tube.Conn.newJobId()
@@ -302,8 +303,7 @@ func (tube *Tube) KickJob(id int64) error {
 	}
 
 	if status := record.Bins[AerospikeNameStatus]; status != AerospikeSymBuried || status != AerospikeSymDelayed {
-		//TODO: Make these comparable by exporting
-		return errors.New("Job is not buried or delayed")
+		return ErrNotBuriedOrDelayed
 	}
 
 	writePolicy := as.NewWritePolicy(record.Generation, 0)
