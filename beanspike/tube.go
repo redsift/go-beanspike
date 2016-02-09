@@ -112,6 +112,10 @@ func (tube *Tube) ReserveAndWait(bus *MessageBus, timeout time.Duration) (id int
 */
 
 func (tube *Tube) Delete(id int64) (bool, error) {
+	return tube.delete(id, 0)
+}
+
+func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 	key, err := as.NewKey(AerospikeNamespace, tube.Name, id)
 	if err != nil {
 		return false, err
@@ -119,10 +123,15 @@ func (tube *Tube) Delete(id int64) (bool, error) {
 
 	// nil out body before deleting record to address aerospike limitations.
 	// Ref: https://discuss.aerospike.com/t/expired-deleted-data-reappears-after-server-is-restarted/470
-	policy := as.NewWritePolicy(0, 0)
+	policy := as.NewWritePolicy(genID, 0)
 	policy.RecordExistsAction = as.UPDATE_ONLY
 	policy.SendKey = true
 	policy.CommitLevel = as.COMMIT_MASTER
+	if genID > 0 {
+		policy.GenerationPolicy = as.EXPECT_GEN_EQUAL
+	} else {
+		policy.GenerationPolicy = as.NONE
+	}
 
 	binBody := as.NewBin(AerospikeNameBody, nil)
 	binCSize := as.NewBin(AerospikeNameCompressedSize, nil)
@@ -444,8 +453,11 @@ R:
 				} else {
 					if body == nil && key != nil {
 						jobID := key.GetObject().(int64)
+						genID := res.Record.Generation
 						// Empty body signifies deleted job for us. Ref: Delete()
-						tube.deleteZombie(jobID)
+						//fmt.Println("calling deleteZombie")
+						tube.deleteZombie(jobID, genID)
+						//fmt.Println("deleteZombie err=", err)
 						continue
 					}
 
@@ -540,8 +552,9 @@ func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason
 				} else {
 					if body == nil && key != nil {
 						jobID := key.GetObject().(int64)
+						genID := res.Record.Generation
 						// Empty body signifies deleted job for us. Ref: Delete()
-						tube.deleteZombie(jobID)
+						tube.deleteZombie(jobID, genID)
 						continue
 					}
 
@@ -559,16 +572,22 @@ func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason
 	return 0, nil, 0, nil, err
 }
 
-func (tube *Tube) deleteZombie(id int64) (bool, error) {
-	// TODO: Handle println
-	fmt.Println("Got a zombie job, deleting and continuing...", id)
-	// TODO: Log to statsd
-
-	if tube.Conn != nil {
-		tube.Conn.stats("tube.zombie.count", tube.Name, float64(1))
+func (tube *Tube) deleteZombie(id int64, genID uint32) (bool, error) {
+	ex, err := tube.delete(id, genID)
+	if err != nil {
+		return ex, err
 	}
 
-	return tube.Delete(id)
+	if ex {
+		// TODO: Handle println
+		fmt.Println("Got a zombie job, deleting and continuing...", id)
+		// TODO: Log to statsd
+		if tube.Conn != nil {
+			tube.Conn.stats("tube.zombie.count", tube.Name, float64(1))
+		}
+	}
+
+	return ex, nil
 }
 
 // this could be done in the future with UDFs triggered on expiry
