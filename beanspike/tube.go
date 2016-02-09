@@ -86,6 +86,10 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 		return 0, err
 	}
 
+	if tube.Conn != nil {
+		tube.Conn.stats("tube.put.count", tube.Name, float64(1))
+	}
+
 	return id, nil
 }
 
@@ -128,7 +132,13 @@ func (tube *Tube) Delete(id int64) (bool, error) {
 		return false, err
 	}
 
-	return tube.Conn.aerospike.Delete(nil, key)
+	ex, err := tube.Conn.aerospike.Delete(nil, key)
+
+	if tube.Conn != nil {
+		tube.Conn.stats("tube.delete.count", tube.Name, float64(1))
+	}
+
+	return ex, err
 }
 
 func (tube *Tube) Stats() (s *Stats, err error) {
@@ -207,6 +217,10 @@ func (tube *Tube) Touch(id int64) error {
 		return err
 	}
 
+	if tube.Conn != nil {
+		tube.Conn.stats("tube.touch.count", tube.Name, float64(1))
+	}
+
 	policy := as.NewWritePolicy(0, uint32(ttrValue.(int)))
 	policy.CommitLevel = as.COMMIT_MASTER
 	return client.Touch(policy, touch)
@@ -241,6 +255,10 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
 
 	binBy := as.NewBin(AerospikeNameBy, as.NewNullValue())
+
+	if tube.Conn != nil {
+		tube.Conn.stats("tube.release.count", tube.Name, float64(1))
+	}
 
 	if delay == 0 {
 		binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
@@ -286,6 +304,10 @@ func (tube *Tube) Bury(id int64, reason []byte) error {
 	binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymBuried)
 	binReason := as.NewBin(AerospikeNameReason, reason)
 
+	if tube.Conn != nil {
+		tube.Conn.stats("tube.bury.count", tube.Name, float64(1))
+	}
+
 	return client.PutBins(writePolicy, record.Key, binStatus, binReason)
 }
 
@@ -329,6 +351,10 @@ func (tube *Tube) KickJob(id int64) error {
 
 	binReason := as.NewBin(AerospikeNameReason, as.NewNullValue())
 	binDelay := as.NewBin(AerospikeNameDelay, as.NewNullValue())
+
+	if tube.Conn != nil {
+		tube.Conn.stats("tube.kick.count", tube.Name, float64(1))
+	}
 
 	return client.PutBins(writePolicy, record.Key, binStatus, binReason, binDelay)
 }
@@ -403,6 +429,10 @@ R:
 									return 0, nil, 0, errors.New("Could not establish original size of compressed content")
 								}
 							}
+						}
+
+						if tube.Conn != nil {
+							tube.Conn.stats("tube.reserve.count", tube.Name, float64(1))
 						}
 
 						// success, we have this job
@@ -501,6 +531,10 @@ func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason
 						reason = reasonValue.([]byte)
 					}
 
+					if tube.Conn != nil {
+						tube.Conn.stats("tube.peekburied.count", tube.Name, float64(1))
+					}
+
 					// success, we have this job
 					return job, body, ttr, reason, nil
 				} else {
@@ -529,6 +563,11 @@ func (tube *Tube) deleteZombie(id int64) (bool, error) {
 	// TODO: Handle println
 	fmt.Println("Got a zombie job, deleting and continuing...", id)
 	// TODO: Log to statsd
+
+	if tube.Conn != nil {
+		tube.Conn.stats("tube.zombie.count", tube.Name, float64(1))
+	}
+
 	return tube.Delete(id)
 }
 

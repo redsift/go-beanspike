@@ -11,8 +11,15 @@ import (
 )
 
 type Conn struct {
-	aerospike *as.Client
-	clientId  string
+	aerospike    *as.Client
+	clientId     string
+	statsHandler func(string, string, float64)
+}
+
+func (conn *Conn) stats(event, tube string, count float64) {
+	if conn.statsHandler != nil {
+		conn.statsHandler(event, tube, count)
+	}
 }
 
 type Tube struct {
@@ -32,7 +39,7 @@ type Stats struct {
 	SkippedSize int
 }
 
-func DialDefault() (*Conn, error) {
+func DialDefault(statsHandler func(string, string, float64)) (*Conn, error) {
 	host := AerospikeHost
 	port := AerospikePort
 
@@ -54,10 +61,10 @@ func DialDefault() (*Conn, error) {
 		}
 	}
 
-	return Dial("", host, port)
+	return Dial("", host, port, statsHandler)
 }
 
-func Dial(id string, host string, port int) (*Conn, error) {
+func Dial(id string, host string, port int, statsHandler func(string, string, float64)) (*Conn, error) {
 	if id == "" {
 		// generate a default Id
 		id = genId()
@@ -74,8 +81,9 @@ func Dial(id string, host string, port int) (*Conn, error) {
 	}
 
 	return &Conn{
-		aerospike: client,
-		clientId:  id,
+		aerospike:    client,
+		clientId:     id,
+		statsHandler: statsHandler,
 	}, nil
 
 }

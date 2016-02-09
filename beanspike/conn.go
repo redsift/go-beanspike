@@ -84,11 +84,7 @@ func (conn *Conn) Use(name string) (*Tube, error) {
 			}
 		}
 	}
-	//TODO: Literals
-	tube := new(Tube)
-	tube.Conn = conn
-	tube.Name = name
-	tube.first = true
+	tube := &Tube{Conn: conn, Name: name, first: true}
 
 	tubesMap[name] = tube
 	return tube, nil
@@ -137,6 +133,8 @@ func (conn *Conn) Delete(name string) error {
 		if err != nil {
 			return err
 		}
+
+		conn.stats("tube.delete.count", name, float64(1))
 	}
 
 	tk, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, name+":"+AerospikeKeySuffixTtr)
