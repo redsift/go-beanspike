@@ -34,6 +34,7 @@ type Stats struct {
 	Buried      int
 	Delayed     int
 	Reserved    int
+	Deleted     int
 	JobSize     int
 	UsedSize    int
 	SkippedSize int

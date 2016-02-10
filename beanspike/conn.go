@@ -116,15 +116,18 @@ func (conn *Conn) Delete(name string) error {
 
 		// nil out body before deleting record to address aerospike limitations.
 		// Ref: https://discuss.aerospike.com/t/expired-deleted-data-reappears-after-server-is-restarted/470
-		policy := as.NewWritePolicy(0, 0)
+		policy := as.NewWritePolicy(res.Record.Generation, 0)
 		policy.RecordExistsAction = as.UPDATE_ONLY
 		policy.SendKey = true
 		policy.CommitLevel = as.COMMIT_MASTER
+		policy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 
 		binBody := as.NewBin(AerospikeNameBody, nil)
 		binCSize := as.NewBin(AerospikeNameCompressedSize, nil)
+		binSize := as.NewBin(AerospikeNameSize, 0)
+		binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymDeleted)
 
-		err = client.PutBins(policy, key, binBody, binCSize)
+		err = client.PutBins(policy, key, binBody, binCSize, binSize, binStatus)
 		if err != nil {
 			return err
 		}

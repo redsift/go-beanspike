@@ -135,8 +135,10 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 
 	binBody := as.NewBin(AerospikeNameBody, nil)
 	binCSize := as.NewBin(AerospikeNameCompressedSize, nil)
+	binSize := as.NewBin(AerospikeNameSize, 0)
+	binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymDeleted)
 
-	err = tube.Conn.aerospike.PutBins(policy, key, binBody, binCSize)
+	err = tube.Conn.aerospike.PutBins(policy, key, binBody, binCSize, binSize, binStatus)
 	if err != nil {
 		return false, err
 	}
@@ -177,6 +179,7 @@ func (tube *Tube) Stats() (s *Stats, err error) {
 			s.Buried += results["buried"].(int)
 			s.Delayed += results["delayed"].(int)
 			s.Reserved += results["reserved"].(int)
+			s.Deleted += results["deleted"].(int)
 
 			s.JobSize += results["js"].(int)
 			s.UsedSize += results["rs"].(int)
@@ -314,7 +317,7 @@ func (tube *Tube) Bury(id int64, reason []byte) error {
 	binReason := as.NewBin(AerospikeNameReason, reason)
 
 	if tube.Conn != nil {
-		tube.Conn.stats("tube.bury.count", tube.Name, float64(1))
+		tube.Conn.stats("tube.buried.count", tube.Name, float64(1))
 	}
 
 	return client.PutBins(writePolicy, record.Key, binStatus, binReason)
