@@ -14,7 +14,7 @@ var rwMutex = sync.RWMutex{}
 
 var tubesMap = map[string]*Tube{}
 
-func (conn *Conn) newJobId() (int64, error) {
+func (conn *Conn) newJobID() (int64, error) {
 	key, err := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, "seq")
 	if err != nil {
 		return 0, err
@@ -44,7 +44,7 @@ func (conn *Conn) Use(name string) (*Tube, error) {
 	}
 
 	if name == AerospikeMetadataSet {
-		return nil, errors.New(fmt.Sprintf("Tube name %v is reserved", name))
+		return nil, fmt.Errorf("Tube name %v is reserved", name)
 	}
 
 	rwMutex.RLock()

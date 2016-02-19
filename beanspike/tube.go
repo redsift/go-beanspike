@@ -15,7 +15,7 @@ var ErrEmptyRecord = errors.New("ASSERT: Record empty")
 var ErrNotBuriedOrDelayed = errors.New("Job is not buried or delayed")
 
 func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bool) (id int64, err error) {
-	id, err = tube.Conn.newJobId()
+	id, err = tube.Conn.newJobID()
 	if err != nil {
 		return 0, err
 	}
@@ -185,7 +185,7 @@ func (tube *Tube) Stats() (s *Stats, err error) {
 			s.UsedSize += results["rs"].(int)
 			s.SkippedSize += results["ss"].(int)
 		} else if errorVal := res.Record.Bins["FAILURE"]; errorVal != nil {
-			return nil, errors.New(fmt.Sprintf("Stats error. %v", errorVal))
+			return nil, fmt.Errorf("Stats error. %v", errorVal)
 		} else {
 			return nil, errors.New("Internal error performing stats on namespace")
 		}
@@ -220,7 +220,7 @@ func (tube *Tube) Touch(id int64) error {
 		return errors.New("Job is not reserved, may have timed out")
 	}
 
-	if record.Bins[AerospikeNameBy] != tube.Conn.clientId {
+	if record.Bins[AerospikeNameBy] != tube.Conn.clientID {
 		return errors.New("Job is not reserved by this client")
 	}
 
@@ -254,11 +254,12 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 		return ErrEmptyRecord
 	}
 
-	if status := record.Bins[AerospikeNameStatus]; status != AerospikeSymReserved && status != AerospikeSymReservedTtr {
+	if status := record.Bins[AerospikeNameStatus]; status != AerospikeSymReserved &&
+		status != AerospikeSymReservedTtr {
 		return errors.New("Job is not reserved")
 	}
 
-	if record.Bins[AerospikeNameBy] != tube.Conn.clientId {
+	if record.Bins[AerospikeNameBy] != tube.Conn.clientID {
 		return errors.New("Job is not reserved by this client")
 	}
 
@@ -275,14 +276,14 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 	if delay == 0 {
 		binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
 		return client.PutBins(writePolicy, record.Key, binStatus, binBy)
-	} else {
-		binDelay, err := tube.delayJob(id, delay)
-		if err != nil {
-			return err
-		}
-		binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymDelayed)
-		return client.PutBins(writePolicy, record.Key, binStatus, binBy, binDelay)
 	}
+
+	binDelay, err := tube.delayJob(id, delay)
+	if err != nil {
+		return err
+	}
+	binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymDelayed)
+	return client.PutBins(writePolicy, record.Key, binStatus, binBy, binDelay)
 }
 
 func (tube *Tube) Bury(id int64, reason []byte) error {
@@ -301,11 +302,12 @@ func (tube *Tube) Bury(id int64, reason []byte) error {
 		return ErrEmptyRecord
 	}
 
-	if status := record.Bins[AerospikeNameStatus]; status != AerospikeSymReserved && status != AerospikeSymReservedTtr {
+	if status := record.Bins[AerospikeNameStatus]; status != AerospikeSymReserved &&
+		status != AerospikeSymReservedTtr {
 		return errors.New("Job is not reserved")
 	}
 
-	if record.Bins[AerospikeNameBy] != tube.Conn.clientId {
+	if record.Bins[AerospikeNameBy] != tube.Conn.clientID {
 		return errors.New("Job is not reserved by this client")
 	}
 
@@ -351,7 +353,7 @@ func (tube *Tube) KickJob(id int64) error {
 		return ErrEmptyRecord
 	}
 
-	if status := record.Bins[AerospikeNameStatus]; status != AerospikeSymBuried || status != AerospikeSymDelayed {
+	if status := record.Bins[AerospikeNameStatus]; status != AerospikeSymBuried && status != AerospikeSymDelayed {
 		return ErrNotBuriedOrDelayed
 	}
 
@@ -383,7 +385,8 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, err error
 		tube.bumpReservedEntries(AerospikeAdminScanSize)
 	}
 
-	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr, AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus)
+	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
+		AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus)
 	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
 
 	policy := as.NewQueryPolicy()
@@ -411,7 +414,8 @@ R:
 				}
 				ttr = 0
 
-				if key := res.Record.Key.Value(); key != nil && key.GetType() == pt.INTEGER && body != nil {
+				if key := res.Record.Key.Value(); key != nil && key.GetType() == pt.INTEGER &&
+					body != nil {
 					job := res.Record.Key.Value().GetObject().(int64)
 
 					var binTtrExp *as.Bin
@@ -438,7 +442,8 @@ R:
 										return 0, nil, 0, err
 									}
 								} else {
-									return 0, nil, 0, errors.New("Could not establish original size of compressed content")
+									return 0, nil, 0,
+										errors.New("Could not establish original size of compressed content")
 								}
 							}
 						}
@@ -491,7 +496,8 @@ R:
 func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason []byte, err error) {
 	client := tube.Conn.aerospike
 
-	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr, AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameReason)
+	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
+		AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameReason)
 	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymBuried))
 
 	policy := as.NewQueryPolicy()
@@ -537,7 +543,8 @@ func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason
 									return 0, nil, 0, nil, err
 								}
 							} else {
-								return 0, nil, 0, nil, errors.New("Could not establish original size of compressed content")
+								return 0, nil, 0, nil,
+									errors.New("Could not establish original size of compressed content")
 							}
 						}
 					}
@@ -552,20 +559,20 @@ func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason
 
 					// success, we have this job
 					return job, body, ttr, reason, nil
-				} else {
-					if body == nil && key != nil {
-						jobID := key.GetObject().(int64)
-						genID := res.Record.Generation
-						// Empty body signifies deleted job for us. Ref: Delete()
-						tube.deleteZombie(jobID, genID)
-						continue
-					}
+				}
 
-					// if the key is nil or not an int something is wrong. WritePolicy is not set
-					// correctly. Skip this record and set err if this is the only record
-					if err == nil {
-						err = errors.New("Missing appropriate entry in job tube")
-					}
+				if body == nil && key != nil {
+					jobID := key.GetObject().(int64)
+					genID := res.Record.Generation
+					// Empty body signifies deleted job for us. Ref: Delete()
+					tube.deleteZombie(jobID, genID)
+					continue
+				}
+
+				// if the key is nil or not an int something is wrong. WritePolicy is not set
+				// correctly. Skip this record and set err if this is the only record
+				if err == nil {
+					err = errors.New("Missing appropriate entry in job tube")
 				}
 			}
 		}
@@ -652,7 +659,7 @@ func (tube *Tube) shouldOperate(scan string) bool {
 	policy := as.NewWritePolicy(0, AerospikeAdminDelay)
 	policy.RecordExistsAction = as.CREATE_ONLY
 
-	binBy := as.NewBin(AerospikeNameBy, tube.Conn.clientId)
+	binBy := as.NewBin(AerospikeNameBy, tube.Conn.clientID)
 
 	err := tube.Conn.aerospike.PutBins(policy, key, binBy)
 	if err != nil {
@@ -830,7 +837,7 @@ func (tube *Tube) attemptJobReservation(record *as.Record, status string, binTtr
 	bins := make([]*as.Bin, 0, 3)
 
 	bins = append(bins, as.NewBin(AerospikeNameStatus, status))
-	bins = append(bins, as.NewBin(AerospikeNameBy, tube.Conn.clientId))
+	bins = append(bins, as.NewBin(AerospikeNameBy, tube.Conn.clientID))
 	if binTtrExp != nil {
 		bins = append(bins, binTtrExp)
 	}

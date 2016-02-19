@@ -12,7 +12,7 @@ import (
 
 type Conn struct {
 	aerospike    *as.Client
-	clientId     string
+	clientID     string
 	statsHandler func(string, string, float64)
 }
 
@@ -68,7 +68,7 @@ func DialDefault(statsHandler func(string, string, float64)) (*Conn, error) {
 func Dial(id string, host string, port int, statsHandler func(string, string, float64)) (*Conn, error) {
 	if id == "" {
 		// generate a default Id
-		id = genId()
+		id = genID()
 	}
 	client, err := as.NewClient(host, port)
 
@@ -83,15 +83,15 @@ func Dial(id string, host string, port int, statsHandler func(string, string, fl
 
 	return &Conn{
 		aerospike:    client,
-		clientId:     id,
+		clientID:     id,
 		statsHandler: statsHandler,
 	}, nil
 
 }
 
-var instanceCount int32 = 0
+var instanceCount int32
 
-func genId() string {
+func genID() string {
 	count := atomic.AddInt32(&instanceCount, 1)
 
 	pid := os.Getpid()
