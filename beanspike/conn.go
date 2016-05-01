@@ -10,9 +10,10 @@ import (
 	ast "github.com/aerospike/aerospike-client-go/types"
 )
 
-var rwMutex = sync.RWMutex{}
-
-var tubesMap = map[string]*Tube{}
+var tubesMap = struct {
+	sync.RWMutex
+	m map[string]*Tube
+}{m: make(map[string]*Tube)}
 
 func (conn *Conn) newJobID() (int64, error) {
 	key, err := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, "seq")
@@ -47,20 +48,18 @@ func (conn *Conn) Use(name string) (*Tube, error) {
 		return nil, fmt.Errorf("Tube name %v is reserved", name)
 	}
 
-	rwMutex.RLock()
-	t := tubesMap[name]
+	tubesMap.RLock()
+	t := tubesMap.m[name]
 	if t != nil {
-		rwMutex.RUnlock()
+		tubesMap.RUnlock()
 		return t, nil
 	}
-	rwMutex.RUnlock()
+	tubesMap.RUnlock()
 
-	rwMutex.Lock()
-	defer func() {
-		rwMutex.Unlock()
-	}()
+	tubesMap.Lock()
+	defer tubesMap.Unlock()
 
-	t = tubesMap[name]
+	t = tubesMap.m[name]
 	if t != nil {
 		return t, nil
 	}
@@ -86,7 +85,7 @@ func (conn *Conn) Use(name string) (*Tube, error) {
 	}
 	tube := &Tube{Conn: conn, Name: name, first: true}
 
-	tubesMap[name] = tube
+	tubesMap.m[name] = tube
 	return tube, nil
 }
 
