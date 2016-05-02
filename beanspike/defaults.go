@@ -26,6 +26,7 @@ const (
 	AerospikeNameTtrValue       = "seconds" // these are not used, review
 	AerospikeNameCompressedSize = "csize"
 	AerospikeNameSize           = "size"
+	AerospikeNameRetries        = "retries"
 
 	// For the scan policy
 	AerospikeQueryQueueSize = 4

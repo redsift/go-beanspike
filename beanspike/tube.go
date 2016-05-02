@@ -93,24 +93,6 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 	return id, nil
 }
 
-/*
-func (tube *Tube) ReserveAndWait(bus *MessageBus, timeout time.Duration) (id int64, body []byte, err error) {
-	if bus == nil {
-		return 0, nil, errors.New("MessageBus cannot be nil for reservation tasks with wait")
-	}
-	id, body, err = tube.Reserve()
-	if err != nil {
-		return 0, nil, err
-	}
-	if id != 0 {
-		return id, body, nil
-	}
-
-	// Wait state
-	return 0, nil, nil
-}
-*/
-
 func (tube *Tube) Delete(id int64) (bool, error) {
 	return tube.delete(id, 0)
 }
@@ -246,7 +228,7 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 		return err
 	}
 
-	record, err := client.Get(nil, key, AerospikeNameStatus, AerospikeNameBy)
+	record, err := client.Get(nil, key, AerospikeNameStatus, AerospikeNameBy, AerospikeNameRetries)
 	if err != nil {
 		return err
 	}
@@ -267,7 +249,15 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
 
+	retries := 1
+	retriesVal := record.Bins[AerospikeNameRetries]
+	if retriesVal != nil {
+		retries = retriesVal.(int)
+		retries += 1
+	}
+
 	binBy := as.NewBin(AerospikeNameBy, as.NewNullValue())
+	binRetries := as.NewBin(AerospikeNameRetries, retries)
 
 	if tube.Conn != nil {
 		tube.Conn.stats("tube.release.count", tube.Name, float64(1))
@@ -275,7 +265,7 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 
 	if delay == 0 {
 		binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
-		return client.PutBins(writePolicy, record.Key, binStatus, binBy)
+		return client.PutBins(writePolicy, record.Key, binStatus, binBy, binRetries)
 	}
 
 	binDelay, err := tube.delayJob(id, delay)
@@ -283,7 +273,7 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 		return err
 	}
 	binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymDelayed)
-	return client.PutBins(writePolicy, record.Key, binStatus, binBy, binDelay)
+	return client.PutBins(writePolicy, record.Key, binStatus, binBy, binRetries, binDelay)
 }
 
 func (tube *Tube) Bury(id int64, reason []byte) error {
@@ -325,17 +315,6 @@ func (tube *Tube) Bury(id int64, reason []byte) error {
 	return client.PutBins(writePolicy, record.Key, binStatus, binReason)
 }
 
-/*
-type InactiveJob struct {
-	Id		int64
-	Delay	int
-	Reason 	[]byte
-}
-
-func (tube *Tube) InactiveJobs() (chan *InactiveJob, error) {
-
-}
-*/
 // Job does not have to be reserved by this client
 func (tube *Tube) KickJob(id int64) error {
 	client := tube.Conn.aerospike
@@ -376,7 +355,7 @@ func (tube *Tube) KickJob(id int64) error {
 // this would be best implemented as a LLIST operation
 // including priority values when take_min is supported as per
 // https://discuss.aerospike.com/t/distributed-priority-queue-with-duplication-check/358
-func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, err error) {
+func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, err error) {
 	client := tube.Conn.aerospike
 
 	if tube.first {
@@ -386,7 +365,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, err error
 	}
 
 	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
-		AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus)
+		AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries)
 	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
 
 	policy := as.NewQueryPolicy()
@@ -397,7 +376,7 @@ R:
 		recordset, err := client.Query(policy, stm)
 
 		if err != nil {
-			return 0, nil, 0, err
+			return 0, nil, 0, 0, err
 		}
 
 		defer recordset.Close()
@@ -425,8 +404,12 @@ R:
 						reserve = AerospikeSymReservedTtr
 						binTtrExp, err = tube.timeJob(job, ttr)
 						if err != nil {
-							return 0, nil, 0, err
+							return 0, nil, 0, 0, err
 						}
+					}
+
+					if retriesValue := res.Record.Bins[AerospikeNameRetries]; retriesValue != nil {
+						retries = retriesValue.(int)
 					}
 
 					lockErr := tube.attemptJobReservation(res.Record, reserve, binTtrExp)
@@ -439,10 +422,10 @@ R:
 									// was compressed
 									body, err = decompress(body, ozValue.(int))
 									if err != nil {
-										return 0, nil, 0, err
+										return 0, nil, 0, 0, err
 									}
 								} else {
-									return 0, nil, 0,
+									return 0, nil, 0, 0,
 										errors.New("Could not establish original size of compressed content")
 								}
 							}
@@ -453,7 +436,7 @@ R:
 						}
 
 						// success, we have this job
-						return job, body, ttr, nil
+						return job, body, ttr, retries, nil
 					}
 					// else something happened to this job in the way
 					// TODO: Handle println
@@ -490,7 +473,7 @@ R:
 	}
 
 	// Some form of error or no job fall through
-	return 0, nil, 0, err
+	return 0, nil, 0, 0, err
 }
 
 func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason []byte, err error) {
