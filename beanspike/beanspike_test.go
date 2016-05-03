@@ -537,6 +537,49 @@ func TestBumpDelayed(t *testing.T) {
 	}
 }
 
+func TestRetries(t *testing.T) {
+	conn, _ := DialDefault(nil)
+	err := conn.Delete(unitTube)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleteSleep()
+
+	tube, err := conn.Use(unitTube)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id, err := tube.Put([]byte("hello"), 0, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id, _, _, retries, err := tube.Reserve()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if retries != 0 {
+		t.Fatalf("Retries should be 0 but was %d instead", retries)
+	}
+
+	err = tube.Release(id, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, _, retries, err = tube.Reserve()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if retries != 1 {
+		t.Fatalf("Retries should be 1 but was %d instead", retries)
+	}
+}
+
 var result int64
 
 // Sitting at 600us / put
