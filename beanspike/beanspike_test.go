@@ -551,32 +551,28 @@ func TestRetries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, err := tube.Put([]byte("hello"), 0, 0, false)
+	_, err = tube.Put([]byte("hello"), 0, 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	id, _, _, retries, err := tube.Reserve()
-	if err != nil {
-		t.Fatal(err)
-	}
+	i := 0
+	for i < 5 {
+		id, _, _, retries, err := tube.Reserve()
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	if retries != 0 {
-		t.Fatalf("Retries should be 0 but was %d instead", retries)
-	}
+		if retries != i {
+			t.Fatalf("Retries should be %d but was %d instead", i, retries)
+		}
 
-	err = tube.Release(id, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+		err = tube.Release(id, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	_, _, _, retries, err = tube.Reserve()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if retries != 1 {
-		t.Fatalf("Retries should be 1 but was %d instead", retries)
+		i += 1
 	}
 }
 
