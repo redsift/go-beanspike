@@ -17,12 +17,12 @@ var ErrNotBuriedOrDelayed = errors.New("Job is not buried or delayed")
 func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bool) (id int64, err error) {
 	id, err = tube.Conn.newJobID()
 	if err != nil {
-		return 0, err
+		return
 	}
 
 	key, err := as.NewKey(AerospikeNamespace, tube.Name, id)
 	if err != nil {
-		return 0, err
+		return
 	}
 
 	policy := as.NewWritePolicy(0, 0)
@@ -38,9 +38,10 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 	bins = append(bins, binOrigSize)
 
 	if lz && shouldCompress(body) {
-		cbody, err := compress(body)
+		var cbody []byte
+		cbody, err = compress(body)
 		if err != nil {
-			return 0, err
+			return
 		}
 
 		if len(cbody) >= len(body) {
@@ -67,9 +68,10 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 		bins = append(bins, binStatus)
 	} else {
 		// put the delay entry in first
-		binDelay, err := tube.delayJob(id, delay)
+		var binDelay *as.Bin
+		binDelay, err = tube.delayJob(id, delay)
 		if err != nil {
-			return 0, err
+			return
 		}
 		binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymDelayed)
 		bins = append(bins, binStatus)
@@ -83,7 +85,7 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 
 	err = client.PutBins(policy, key, bins...)
 	if err != nil {
-		return 0, err
+		return
 	}
 
 	if tube.Conn != nil {
