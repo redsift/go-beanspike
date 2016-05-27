@@ -20,6 +20,8 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 		return
 	}
 
+	fmt.Println("Writing with key...", AerospikeNamespace, tube.Name, id)
+
 	key, err := as.NewKey(AerospikeNamespace, tube.Name, id)
 	if err != nil {
 		return
