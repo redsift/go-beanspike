@@ -105,7 +105,12 @@ func (conn *Conn) Delete(name string) error {
 		return err
 	}
 
-	defer recordset.Close()
+	defer func() {
+		recordset.Close()
+		tubesMap.Lock()
+		delete(tubesMap.m, name)
+		tubesMap.Unlock()
+	}()
 
 	for res := range recordset.Results() {
 		if res.Err != nil {
