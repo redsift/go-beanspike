@@ -348,8 +348,6 @@ func TestRelease(t *testing.T) {
 	}
 
 	idN, _, _, _, err = tube.Reserve()
-	//idN, _, _, _, err = tube.Reserve()
-	//idN, _, _, _, err = tube.Reserve()
 	if idN == 0 {
 		t.Log(err)
 		t.Fatal("No job reserved after release")
@@ -358,6 +356,7 @@ func TestRelease(t *testing.T) {
 		t.Fatal("Unexpected job reserved after release")
 	}
 
+	tube.Release(id, 0)
 	conn.Delete(unitTube)
 }
 

@@ -230,7 +230,7 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 		return err
 	}
 
-	record, err := client.Get(nil, key, AerospikeNameStatus, AerospikeNameBy, AerospikeNameRetries)
+	record, err := client.Get(nil, key, AerospikeNameStatus, AerospikeNameBy, AerospikeNameRetries, AerospikeNameTtrKey)
 	if err != nil {
 		return err
 	}
@@ -247,6 +247,16 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 		return errors.New("Job is not reserved by this client")
 	}
 
+	if binTtr := record.Bins[AerospikeNameTtrKey]; binTtr != nil {
+		entry := binTtr.(string)
+
+		key, err := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, entry)
+
+		if err == nil {
+			client.Delete(nil, key)
+		}
+	}
+
 	writePolicy := as.NewWritePolicy(record.Generation, 0)
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
@@ -260,6 +270,7 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 
 	binBy := as.NewBin(AerospikeNameBy, as.NewNullValue())
 	binRetries := as.NewBin(AerospikeNameRetries, retries)
+	binTtrKey := as.NewBin(AerospikeNameTtrKey, as.NewNullValue())
 
 	if tube.Conn != nil {
 		tube.Conn.stats("tube.release.count", tube.Name, float64(1))
@@ -267,7 +278,7 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 
 	if delay == 0 {
 		binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
-		return client.PutBins(writePolicy, record.Key, binStatus, binBy, binRetries)
+		return client.PutBins(writePolicy, record.Key, binStatus, binBy, binRetries, binTtrKey)
 	}
 
 	binDelay, err := tube.delayJob(id, delay)
@@ -275,7 +286,7 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 		return err
 	}
 	binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymDelayed)
-	return client.PutBins(writePolicy, record.Key, binStatus, binBy, binRetries, binDelay)
+	return client.PutBins(writePolicy, record.Key, binStatus, binBy, binRetries, binDelay, binTtrKey)
 }
 
 func (tube *Tube) Bury(id int64, reason []byte) error {
@@ -627,7 +638,7 @@ func (tube *Tube) timeJob(id int64, ttr time.Duration) (*as.Bin, error) {
 	}
 
 	policy := as.NewWritePolicy(0, uint32(ttr.Seconds()))
-	policy.RecordExistsAction = as.REPLACE
+	policy.RecordExistsAction = as.CREATE_ONLY
 	policy.CommitLevel = as.COMMIT_MASTER
 
 	ttrBin := as.NewBin(AerospikeNameTtrValue, int32(ttr.Seconds()))
