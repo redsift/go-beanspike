@@ -7,6 +7,6 @@ package: github.com/redsift/go-beanspike
 # Declare your project's dependencies.
 import:
   - package: github.com/aerospike/aerospike-client-go
-    ref:     v1.10.0
+    ref:     v1.14.0
   - package: github.com/cloudflare/golz4
     ref:     ef862a3cdc58a6f1fee4e3af3d44fbe279194cde
