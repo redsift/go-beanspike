@@ -55,6 +55,8 @@ func TestPut(t *testing.T) {
 	if err == nil {
 		t.Fatal("Was able to touch a job that was not timeout-able")
 	}
+
+	conn.Delete(unitTube)
 }
 
 func TestReserve(t *testing.T) {
@@ -89,6 +91,8 @@ func TestReserve(t *testing.T) {
 	if !bytes.Equal(payload, body) {
 		t.Fatal("Body do not match submitted payload")
 	}
+
+	conn.Delete(unitTube)
 }
 
 func TestReserveCompressedRnd(t *testing.T) {
@@ -130,6 +134,8 @@ func TestReserveCompressedRnd(t *testing.T) {
 	if !bytes.Equal(payload, body) {
 		t.Fatal("Body do not match submitted payload")
 	}
+
+	conn.Delete(unitTube)
 }
 
 func TestReserveCompressedStr(t *testing.T) {
@@ -167,6 +173,8 @@ func TestReserveCompressedStr(t *testing.T) {
 	if !bytes.Equal(payload, body) {
 		t.Fatal("Body do not match submitted payload")
 	}
+
+	conn.Delete(unitTube)
 }
 
 func TestPutTtr(t *testing.T) {
@@ -225,6 +233,8 @@ func TestPutTtr(t *testing.T) {
 	if idR3 != id {
 		t.Fatalf("Job not reserved after ttr, got %v", idR3)
 	}
+
+	conn.Delete(unitTube)
 }
 
 func TestPutTouch(t *testing.T) {
@@ -282,6 +292,8 @@ func TestPutTouch(t *testing.T) {
 	if idR3 != 0 {
 		t.Fatal("Touch did not keep the job reserved")
 	}
+
+	conn.Delete(unitTube)
 }
 
 func TestRelease(t *testing.T) {
@@ -336,12 +348,17 @@ func TestRelease(t *testing.T) {
 	}
 
 	idN, _, _, _, err = tube.Reserve()
+	//idN, _, _, _, err = tube.Reserve()
+	//idN, _, _, _, err = tube.Reserve()
 	if idN == 0 {
+		t.Log(err)
 		t.Fatal("No job reserved after release")
 	}
 	if idN != id {
 		t.Fatal("Unexpected job reserved after release")
 	}
+
+	conn.Delete(unitTube)
 }
 
 func TestDelete(t *testing.T) {
@@ -367,12 +384,11 @@ func TestDelete(t *testing.T) {
 
 	// id should not exist, delete should work
 	exists, err = tube.Delete(id)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if exists {
 		t.Fatal("Job Id should not exist")
 	}
+
+	conn.Delete(unitTube)
 }
 
 func TestStats(t *testing.T) {
@@ -431,6 +447,8 @@ func TestStats(t *testing.T) {
 	if stats.Ready != jobs-1 {
 		t.Fatalf("Wrong number of ready jobs reported, %v vs an expected %v", stats.Ready, jobs-1)
 	}
+
+	conn.Delete(unitTube)
 }
 
 func TestShouldOperate(t *testing.T) {
@@ -476,6 +494,8 @@ func TestShouldOperate(t *testing.T) {
 	if !should {
 		t.Fatalf("Was not allowed to operate after waiting %v seconds", AerospikeAdminDelay)
 	}
+
+	conn.Delete(unitTube)
 }
 
 func TestBumpDelayed(t *testing.T) {
@@ -535,6 +555,8 @@ func TestBumpDelayed(t *testing.T) {
 	if id != idJ {
 		t.Fatal("Job should have been presented after delay")
 	}
+
+	conn.Delete(unitTube)
 }
 
 func TestRetries(t *testing.T) {
@@ -574,9 +596,9 @@ func TestRetries(t *testing.T) {
 
 		i += 1
 	}
-}
 
-var result int64
+	conn.Delete(unitTube)
+}
 
 // Sitting at 600us / put
 func BenchmarkPut(b *testing.B) {
@@ -596,6 +618,8 @@ func BenchmarkPut(b *testing.B) {
 		}
 
 	}
+
+	conn.Delete(unitTube)
 }
 
 // Sitting at 16ms / reserve
@@ -611,7 +635,6 @@ func BenchmarkReserve(b *testing.B) {
 		tube.Put(val, 0, 0, false)
 	}
 
-	var id int64
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		id, _, _, _, err := tube.Reserve()
@@ -622,7 +645,8 @@ func BenchmarkReserve(b *testing.B) {
 			b.Fatal("No reserved Job.")
 		}
 	}
-	result = id
+
+	conn.Delete(unitTube)
 }
 
 func BenchmarkRelease(b *testing.B) {
@@ -653,4 +677,6 @@ func BenchmarkRelease(b *testing.B) {
 			b.Fatalf("Error releasing Job. %v", err)
 		}
 	}
+
+	conn.Delete(unitTube)
 }

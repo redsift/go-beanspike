@@ -472,6 +472,8 @@ R:
 		if count == 0 {
 			break
 		}
+
+		// TODO: Delete "DELETED" jobs so we can reclaim space. Deleted jobs come back on aerospike restart.
 	}
 
 	// Some form of error or no job fall through
@@ -625,7 +627,7 @@ func (tube *Tube) timeJob(id int64, ttr time.Duration) (*as.Bin, error) {
 	}
 
 	policy := as.NewWritePolicy(0, uint32(ttr.Seconds()))
-	policy.RecordExistsAction = as.CREATE_ONLY
+	policy.RecordExistsAction = as.REPLACE
 	policy.CommitLevel = as.COMMIT_MASTER
 
 	ttrBin := as.NewBin(AerospikeNameTtrValue, int32(ttr.Seconds()))
