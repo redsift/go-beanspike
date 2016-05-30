@@ -107,7 +107,7 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 
 	// nil out body before deleting record to address aerospike limitations.
 	// Ref: https://discuss.aerospike.com/t/expired-deleted-data-reappears-after-server-is-restarted/470
-	policy := as.NewWritePolicy(genID, 0)
+	policy := as.NewWritePolicy(genID, 1) // set a a small ttl so the record gets evicted
 	policy.RecordExistsAction = as.UPDATE_ONLY
 	policy.SendKey = true
 	policy.CommitLevel = as.COMMIT_MASTER
@@ -483,8 +483,6 @@ R:
 		if count == 0 {
 			break
 		}
-
-		// TODO: Delete "DELETED" jobs so we can reclaim space. Deleted jobs come back on aerospike restart.
 	}
 
 	// Some form of error or no job fall through

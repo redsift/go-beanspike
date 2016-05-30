@@ -3,6 +3,7 @@ package beanspike
 import (
 	"bytes"
 	"crypto/rand"
+	//"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -613,3 +614,66 @@ func BenchmarkRelease(b *testing.B) {
 	conn.Delete(unitTube)
 	deleteSleep()
 }
+
+/*func TestDisconnect(t *testing.T) {
+	conn, err := DialDefault(nil)
+	if err != nil {
+		// fatal as looks like nothing else will work
+		t.Fatalf("Unable to connect. %v", err)
+	}
+
+	//conn.Delete(unitTube)
+	//deleteSleep()
+
+	tube, err := conn.Use("chronos_out")
+	if err != nil {
+		t.Fatalf("Error getting tube: %v", err)
+	}
+
+	for {
+		id, err := tube.Put([]byte("hello"), 0, 10*time.Second, false)
+		if err != nil {
+			fmt.Println("Error:", err)
+		}
+		fmt.Println("Put id:", id)
+
+		time.Sleep(time.Millisecond * 10)
+	}
+}
+
+func TestDisconnect2(t *testing.T) {
+	conn, err := DialDefault(nil)
+	if err != nil {
+		// fatal as looks like nothing else will work
+		t.Fatalf("Unable to connect. %v", err)
+	}
+
+	//conn.Delete(unitTube)
+	//deleteSleep()
+
+	tube, err := conn.Use("chronos_out")
+	if err != nil {
+		t.Fatalf("Error getting tube: %v", err)
+	}
+
+	for {
+		id, _, _, _, err := tube.Reserve()
+		if err != nil {
+			fmt.Println("Error:", err)
+		}
+		fmt.Println("Reserved id:", id)
+
+		time.Sleep(time.Second)
+	}
+}
+
+func TestDisconnect3(t *testing.T) {
+	conn, err := DialDefault(nil)
+	if err != nil {
+		// fatal as looks like nothing else will work
+		t.Fatalf("Unable to connect. %v", err)
+	}
+
+	conn.Delete("chronos_out")
+	deleteSleep()
+}*/
