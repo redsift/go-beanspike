@@ -9,5 +9,5 @@ import:
   - package: github.com/aerospike/aerospike-client-go
     ref:     v1.14.0
   - package: github.com/cloudflare/golz4
-    repo:    github.com/jmoiron/golz4
+    repo:    https://github.com/jmoiron/golz4
     ref:     27f83594ae3e85936dd5c444ddd615632abbbbfb
