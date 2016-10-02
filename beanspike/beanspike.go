@@ -3,11 +3,10 @@ package beanspike
 import (
 	"fmt"
 	"os"
-	"regexp"
-	"strconv"
 	"sync/atomic"
 
 	as "github.com/aerospike/aerospike-client-go"
+	"strconv"
 )
 
 type Conn struct {
@@ -49,16 +48,10 @@ func DialDefault(statsHandler func(string, string, float64)) (*Conn, error) {
 	}
 
 	if p := os.Getenv(AerospikePortEnv); p != "" {
-		var dh string
 		var err error
-		dh, port, err = parsePort(p)
+		port, err = strconv.Atoi(p)
 		if err != nil {
-			return nil, fmt.Errorf("invalid environment variable %v. %v", AerospikePortEnv, err)
-		}
-
-		if dh != "" {
-			// Docker specified Host in the port env overrides AerospikeHostEnv
-			host = dh
+			return nil, err
 		}
 	}
 
@@ -102,7 +95,7 @@ func genID() string {
 	return fmt.Sprintf("????????:%v:%v", pid, count)
 }
 
-var portRE = regexp.MustCompile(`^tcp:\/\/(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b):(\d{1,5})$`)
+/*var portRE = regexp.MustCompile(`^tcp:\/\/(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b):(\d{1,5})$`)
 
 // Parse port check is the port var is actually a Docker ENV
 // as this can easily happen
@@ -116,4 +109,4 @@ func parsePort(portStr string) (host string, port int, err error) {
 
 	port, err = strconv.Atoi(portStr)
 	return host, port, err
-}
+}*/
