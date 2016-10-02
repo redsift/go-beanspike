@@ -66,7 +66,6 @@ func DialDefault(statsHandler func(string, string, float64)) (*Conn, error) {
 }
 
 func Dial(id string, host string, port int, statsHandler func(string, string, float64)) (*Conn, error) {
-	fmt.Println("beanspike.Dial: host=", host)
 	if id == "" {
 		// generate a default Id
 		id = genID()
