@@ -392,7 +392,9 @@ R:
 			return 0, nil, 0, 0, err
 		}
 
-		defer recordset.Close()
+		defer func(rs *as.Recordset) {
+			rs.Close()
+		}(recordset)
 		for res := range recordset.Results() {
 			if res.Err != nil {
 				if err == nil {
@@ -506,7 +508,10 @@ func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason
 			return 0, nil, 0, nil, err
 		}
 
-		defer recordset.Close()
+		defer func(rs *as.Recordset) {
+			rs.Close()
+		}(recordset)
+
 		for res := range recordset.Results() {
 			if res.Err != nil {
 				if err == nil {
