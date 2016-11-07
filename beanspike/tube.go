@@ -377,15 +377,15 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 		tube.bumpReservedEntries(AerospikeAdminScanSize)
 	}
 
-	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
-		AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries)
-	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
-
-	policy := as.NewQueryPolicy()
-	policy.RecordQueueSize = AerospikeQueryQueueSize
-
 R:
 	for i := 0; i < 2; i++ {
+		stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
+			AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries)
+		stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
+
+		policy := as.NewQueryPolicy()
+		policy.RecordQueueSize = AerospikeQueryQueueSize
+
 		recordset, err := client.Query(policy, stm)
 
 		if err != nil {
@@ -494,14 +494,14 @@ R:
 func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason []byte, err error) {
 	client := tube.Conn.aerospike
 
-	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
-		AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameReason)
-	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymBuried))
-
-	policy := as.NewQueryPolicy()
-	policy.RecordQueueSize = AerospikeQueryQueueSize
-
 	for i := 0; i < 2; i++ {
+		stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
+			AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameReason)
+		stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymBuried))
+
+		policy := as.NewQueryPolicy()
+		policy.RecordQueueSize = AerospikeQueryQueueSize
+
 		recordset, err := client.Query(policy, stm)
 
 		if err != nil {

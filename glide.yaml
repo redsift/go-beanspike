@@ -8,7 +8,7 @@ package: github.com/redsift/go-beanspike
 import:
   - package: github.com/aerospike/aerospike-client-go
     repo:    https://github.com/redsift/aerospike-client-go
-    ref:     v1.20.0
+    ref:     goroutine-leak-fix
   - package: github.com/cloudflare/golz4
     repo:    https://github.com/jmoiron/golz4
     ref:     27f83594ae3e85936dd5c444ddd615632abbbbfb
