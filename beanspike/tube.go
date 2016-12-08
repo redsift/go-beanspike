@@ -222,7 +222,7 @@ func (tube *Tube) Touch(id int64) error {
 	return client.Touch(policy, touch)
 }
 
-func (tube *Tube) Release(id int64, delay time.Duration) error {
+func (tube *Tube) Release(id int64, delay time.Duration, incr bool) error {
 	client := tube.Conn.aerospike
 
 	key, err := as.NewKey(AerospikeNamespace, tube.Name, id)
@@ -230,7 +230,8 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 		return err
 	}
 
-	record, err := client.Get(nil, key, AerospikeNameStatus, AerospikeNameBy, AerospikeNameRetries, AerospikeNameTtrKey)
+	record, err := client.Get(nil, key, AerospikeNameStatus, AerospikeNameBy, AerospikeNameRetries,
+		AerospikeNameTtrKey)
 	if err != nil {
 		return err
 	}
@@ -261,32 +262,36 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
 
-	retries := 1
-	retriesVal := record.Bins[AerospikeNameRetries]
-	if retriesVal != nil {
-		retries = retriesVal.(int)
-		retries += 1
+	bins := make([]*as.Bin, 0, 5)
+	if incr {
+		retries := 1
+		retriesVal := record.Bins[AerospikeNameRetries]
+		if retriesVal != nil {
+			retries = retriesVal.(int)
+			retries += 1
+		}
+		bins = append(bins, as.NewBin(AerospikeNameRetries, retries))
 	}
 
-	binBy := as.NewBin(AerospikeNameBy, as.NewNullValue())
-	binRetries := as.NewBin(AerospikeNameRetries, retries)
-	binTtrKey := as.NewBin(AerospikeNameTtrKey, as.NewNullValue())
+	bins = append(bins, as.NewBin(AerospikeNameBy, as.NewNullValue()))
+	bins = append(bins, as.NewBin(AerospikeNameTtrKey, as.NewNullValue()))
 
 	if tube.Conn != nil {
 		tube.Conn.stats("tube.release.count", tube.Name, float64(1))
 	}
 
-	if delay == 0 {
-		binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
-		return client.PutBins(writePolicy, record.Key, binStatus, binBy, binRetries, binTtrKey)
+	if delay.Seconds() == 0 {
+		bins = append(bins, as.NewBin(AerospikeNameStatus, AerospikeSymReady))
+		return client.PutBins(writePolicy, record.Key, bins...)
 	}
 
 	binDelay, err := tube.delayJob(id, delay)
 	if err != nil {
 		return err
 	}
-	binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymDelayed)
-	return client.PutBins(writePolicy, record.Key, binStatus, binBy, binRetries, binDelay, binTtrKey)
+	bins = append(bins, as.NewBin(AerospikeNameStatus, AerospikeSymDelayed))
+	bins = append(bins, binDelay)
+	return client.PutBins(writePolicy, record.Key, bins...)
 }
 
 func (tube *Tube) Bury(id int64, reason []byte) error {

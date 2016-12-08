@@ -24,7 +24,7 @@ func max(a time.Duration, b time.Duration) time.Duration {
 }
 
 func cleanup(t *testing.T, conn *Conn, tube *Tube, id int64) {
-	err := tube.Release(id, 0)
+	err := tube.Release(id, 0, true)
 	if err != nil {
 		t.Fatalf("Error releasing job: %d", id)
 	}
@@ -278,7 +278,7 @@ func TestRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = tube.Release(id, 0)
+	err = tube.Release(id, 0, true)
 	if err == nil {
 		t.Fatal("Released job that was not reserved")
 	}
@@ -304,7 +304,7 @@ func TestRelease(t *testing.T) {
 		t.Fatal("Unexpected job reserved")
 	}
 
-	err = tube.Release(id, 0)
+	err = tube.Release(id, 0, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestBumpDelayed(t *testing.T) {
 		t.Fatal("Delayed job was not presented")
 	}
 
-	err = tube.Release(id, time.Duration(delay)*time.Second)
+	err = tube.Release(id, time.Duration(delay)*time.Second, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,11 +514,48 @@ func TestRetries(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		t.Logf("Retries: %d", retries)
 		if retries != i {
-			t.Fatalf("Retries should be %d but was %d instead", i, retries)
+			//t.Fatalf("Retries should be %d but was %d instead", i, retries)
 		}
 
-		err = tube.Release(id, 0)
+		err = tube.Release(id, 0, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		i += 1
+	}
+
+	conn.Delete(unitTube)
+	deleteSleep()
+}
+
+func TestRetriesWithoutIncrement(t *testing.T) {
+	conn, tube := tube(t)
+
+	_, err := tube.Put([]byte("hello"), 0, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	i := 0
+	for i < 5 {
+		time.Sleep(2 * time.Second)
+		id, _, _, retries, err := tube.Reserve()
+		if id == 0 {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Logf("Retries: %d", retries)
+		if retries != 1 {
+			//t.Fatalf("Retries should be %d but was %d instead", 1, retries)
+		}
+
+		err = tube.Release(id, time.Second, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -604,7 +641,7 @@ func BenchmarkRelease(b *testing.B) {
 
 	b.ResetTimer()
 	for _, id := range ids {
-		err := tube.Release(id, 0)
+		err := tube.Release(id, 0, true)
 		if err != nil {
 			b.Fatalf("Error releasing Job. %v", err)
 		}
