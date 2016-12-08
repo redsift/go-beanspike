@@ -514,9 +514,8 @@ func TestRetries(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		t.Logf("Retries: %d", retries)
 		if retries != i {
-			//t.Fatalf("Retries should be %d but was %d instead", i, retries)
+			t.Fatalf("Retries should be %d but was %d instead", i, retries)
 		}
 
 		err = tube.Release(id, 0, true)
@@ -550,9 +549,8 @@ func TestRetriesWithoutIncrement(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		t.Logf("Retries: %d", retries)
-		if retries != 1 {
-			//t.Fatalf("Retries should be %d but was %d instead", 1, retries)
+		if retries != 0 {
+			t.Fatalf("Retries should be %d but was %d instead", 1, retries)
 		}
 
 		err = tube.Release(id, time.Second, false)
