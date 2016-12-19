@@ -11,7 +11,7 @@ const (
 
 	// run admin operations at most 1/10 seconds
 	AerospikeAdminDelay    = 2
-	AerospikeAdminScanSize = 50
+	AerospikeAdminScanSize = 2500
 
 	AerospikeMetadataSet = "metadata"
 
