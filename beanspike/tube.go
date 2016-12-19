@@ -756,6 +756,7 @@ func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 // admin function to move DELAYED operations to READY
 // returns the number of jobs processed and if any action was taken
 func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
+	fmt.Println("bumpDelayedEntries", tube.Name, n)
 	if !tube.shouldOperate(AerospikeKeySuffixDelayed) {
 		// println("skipping operation")
 		return 0, nil
@@ -773,6 +774,7 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 
 	// build a list of delayed jobs
 	if err != nil {
+		fmt.Println("bumpDelayedEntries1", tube.Name, err)
 		return 0, err
 	}
 
@@ -786,6 +788,7 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 	keys := make([]*as.Key, 0, n)
 	for res := range recordset.Results() {
 		if res.Err != nil {
+			fmt.Println("bumpDelayedEntries2", tube.Name, err)
 			return 0, err
 		}
 		delay := res.Record.Bins[AerospikeNameDelay]
@@ -807,6 +810,7 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 	batch.Priority = as.HIGH
 	records, err := client.BatchGetHeader(batch, keys)
 	if err != nil {
+		fmt.Println("bumpDelayedEntries3", tube.Name, err)
 		return 0, err
 	}
 
@@ -814,6 +818,7 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 	for i := 0; i < len(records); i++ {
 		record := records[i]
 		if record == nil || record.Expiration < AerospikeAdminDelay {
+			fmt.Println("bumpDelayedEntries4", tube.Name)
 			// the record has expired or will expire before this operation runs again
 			update := as.NewWritePolicy(entries[i].generation, 0)
 			update.RecordExistsAction = as.UPDATE_ONLY
