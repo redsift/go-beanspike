@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"math"
+
 	as "github.com/aerospike/aerospike-client-go"
 	pt "github.com/aerospike/aerospike-client-go/types/particle_type"
 	lz4 "github.com/cloudflare/golz4"
@@ -832,11 +834,8 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 	count := 0
 	for i := 0; i < len(records); i++ {
 		record := records[i]
-		if record != nil {
-			fmt.Println("Expiration = ", record.Expiration)
-		}
 
-		if record == nil || record.Expiration < AerospikeAdminDelay {
+		if record == nil || record.Expiration < AerospikeAdminDelay || record.Expiration == math.MaxUint32 {
 			// the record has expired or will expire before this operation runs again
 			update := as.NewWritePolicy(entries[i].generation, 0)
 			update.RecordExistsAction = as.UPDATE_ONLY
