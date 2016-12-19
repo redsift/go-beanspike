@@ -832,6 +832,10 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 	count := 0
 	for i := 0; i < len(records); i++ {
 		record := records[i]
+		if record != nil {
+			fmt.Println("Expiration = ", record.Expiration)
+		}
+
 		if record == nil || record.Expiration < AerospikeAdminDelay {
 			// the record has expired or will expire before this operation runs again
 			update := as.NewWritePolicy(entries[i].generation, 0)
