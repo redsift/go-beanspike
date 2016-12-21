@@ -467,16 +467,6 @@ R:
 					// TODO: Handle println
 					fmt.Printf("!!! Job lock failed due to %v\n", lockErr)
 				} else {
-					if body == nil && key != nil {
-						jobID := key.GetObject().(int64)
-						genID := res.Record.Generation
-						// Empty body signifies deleted job for us. Ref: Delete()
-						//fmt.Println("calling deleteZombie")
-						tube.deleteZombie(jobID, genID)
-						//fmt.Println("deleteZombie err=", err)
-						continue
-					}
-
 					// if the key is nil or not an int something is wrong. WritePolicy is not set
 					// correctly. Skip this record and set err if this is the only record
 					if err == nil {
@@ -580,14 +570,6 @@ func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason
 					return job, body, ttr, reason, nil
 				}
 
-				if body == nil && key != nil {
-					jobID := key.GetObject().(int64)
-					genID := res.Record.Generation
-					// Empty body signifies deleted job for us. Ref: Delete()
-					tube.deleteZombie(jobID, genID)
-					continue
-				}
-
 				// if the key is nil or not an int something is wrong. WritePolicy is not set
 				// correctly. Skip this record and set err if this is the only record
 				if err == nil {
@@ -599,24 +581,6 @@ func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason
 
 	// Some form of error or no job fall through
 	return 0, nil, 0, nil, err
-}
-
-func (tube *Tube) deleteZombie(id int64, genID uint32) (bool, error) {
-	ex, err := tube.delete(id, genID)
-	if err != nil {
-		return ex, err
-	}
-
-	if ex {
-		// TODO: Handle println
-		fmt.Println("Got a zombie job, deleting and continuing...", id)
-		// TODO: Log to statsd
-		if tube.Conn != nil {
-			tube.Conn.stats("tube.zombie.count", tube.Name, float64(1))
-		}
-	}
-
-	return ex, nil
 }
 
 // this could be done in the future with UDFs triggered on expiry
