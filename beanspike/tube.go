@@ -129,13 +129,13 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 		return false, err
 	}
 
-	ex, err := tube.Conn.aerospike.Delete(nil, key)
+	//ex, err := tube.Conn.aerospike.Delete(nil, key)
 
 	if tube.Conn != nil {
 		tube.Conn.stats("tube.delete.count", tube.Name, float64(1))
 	}
 
-	return ex, err
+	return true, err
 }
 
 func (tube *Tube) Stats() (s *Stats, err error) {
