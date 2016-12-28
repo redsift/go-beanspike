@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	as "github.com/aerospike/aerospike-client-go"
+	aslogger "github.com/aerospike/aerospike-client-go/logger"
 )
 
 type Conn struct {
@@ -38,6 +39,10 @@ type Stats struct {
 	JobSize     int
 	UsedSize    int
 	SkippedSize int
+}
+
+func init() {
+	aslogger.Logger.SetLevel(aslogger.DEBUG)
 }
 
 func DialDefault(statsHandler func(string, string, float64)) (*Conn, error) {
