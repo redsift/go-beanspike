@@ -108,8 +108,9 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 	}
 
 	// nil out body before deleting record to address aerospike limitations.
+	// also set status to DELETED
 	// Ref: https://discuss.aerospike.com/t/expired-deleted-data-reappears-after-server-is-restarted/470
-	policy := as.NewWritePolicy(genID, 1) // set a a small ttl so the record gets evicted
+	policy := as.NewWritePolicy(genID, 0)
 	policy.RecordExistsAction = as.UPDATE_ONLY
 	policy.SendKey = true
 	policy.CommitLevel = as.COMMIT_MASTER
@@ -129,13 +130,15 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 		return false, err
 	}
 
-	//ex, err := tube.Conn.aerospike.Delete(nil, key)
+	ex, err := tube.Conn.aerospike.Delete(nil, key)
 
-	if tube.Conn != nil {
-		tube.Conn.stats("tube.delete.count", tube.Name, float64(1))
+	if err != nil {
+		if tube.Conn != nil {
+			tube.Conn.stats("tube.delete.count", tube.Name, float64(1))
+		}
 	}
 
-	return true, err
+	return ex, err
 }
 
 func (tube *Tube) Stats() (s *Stats, err error) {
