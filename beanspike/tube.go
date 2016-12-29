@@ -124,15 +124,11 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 	// nil out body before deleting record to address aerospike limitations.
 	// also set status to DELETED
 	// Ref: https://discuss.aerospike.com/t/expired-deleted-data-reappears-after-server-is-restarted/470
-	policy := as.NewWritePolicy(genID, 1) // set a small ttl
+	policy := as.NewWritePolicy(0, 0) // set a small ttl
 	policy.RecordExistsAction = as.UPDATE_ONLY
 	policy.SendKey = true
 	policy.CommitLevel = as.COMMIT_MASTER
-	if genID > 0 {
-		policy.GenerationPolicy = as.EXPECT_GEN_EQUAL
-	} else {
-		policy.GenerationPolicy = as.NONE
-	}
+	policy.GenerationPolicy = as.NONE
 
 	binBody := as.NewBin(AerospikeNameBody, nil)
 	binCSize := as.NewBin(AerospikeNameCompressedSize, nil)
@@ -142,6 +138,25 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 	err = tube.Conn.aerospike.PutBins(policy, key, binBody, binCSize, binSize, binStatus)
 	if err != nil {
 		return false, err
+	}
+
+	if genID > 0 {
+		policy.Generation = genID
+		policy.GenerationPolicy = as.EXPECT_GEN_EQUAL
+
+		err = tube.Conn.aerospike.PutBins(policy, key, binBody, binCSize, binSize, binStatus)
+		if err != nil {
+			return false, err
+		}
+
+		policy.Generation = genID + 1
+		policy.Expiration = 1 // set a small ttl so record gets evicted
+		policy.GenerationPolicy = as.NONE
+
+		err = tube.Conn.aerospike.PutBins(policy, key, binBody, binCSize, binSize, binStatus)
+		if err != nil {
+			return false, err
+		}
 	}
 
 	ex, err := tube.Conn.aerospike.Delete(nil, key)
