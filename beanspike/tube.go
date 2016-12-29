@@ -107,10 +107,24 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 		return false, err
 	}
 
+	// if genID is 0, fetch record to get the latest generation
+	if genID == 0 {
+		client := tube.Conn.aerospike
+		record, err := client.Get(nil, key, AerospikeNameStatus)
+		if err != nil {
+			return false, err
+		}
+		if record == nil {
+			return false, ErrEmptyRecord
+		}
+
+		genID = record.Generation
+	}
+
 	// nil out body before deleting record to address aerospike limitations.
 	// also set status to DELETED
 	// Ref: https://discuss.aerospike.com/t/expired-deleted-data-reappears-after-server-is-restarted/470
-	policy := as.NewWritePolicy(genID, 0)
+	policy := as.NewWritePolicy(genID, 1) // set a small ttl
 	policy.RecordExistsAction = as.UPDATE_ONLY
 	policy.SendKey = true
 	policy.CommitLevel = as.COMMIT_MASTER

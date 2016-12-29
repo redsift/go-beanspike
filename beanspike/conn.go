@@ -119,6 +119,7 @@ func (conn *Conn) Delete(name string) error {
 		key := res.Record.Key
 
 		// nil out body before deleting record to address aerospike limitations.
+		// set status to DELETED
 		// Ref: https://discuss.aerospike.com/t/expired-deleted-data-reappears-after-server-is-restarted/470
 		policy := as.NewWritePolicy(res.Record.Generation, 1) // set a a small ttl so the record gets evicted
 		policy.RecordExistsAction = as.UPDATE_ONLY
