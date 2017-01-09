@@ -874,7 +874,7 @@ func (tube *Tube) deleteZombieEntries(n int) (int, error) {
 	}
 
 	if count > 0 {
-		fmt.Printf("Got zombie jobs, deleting %d jobs in tube %s and continuing...", count, tube.Name)
+		fmt.Printf("Got zombie jobs, deleting %d jobs in tube %s and continuing...\n", count, tube.Name)
 		// TODO: Log to statsd
 		if tube.Conn != nil {
 			tube.Conn.stats("tube.zombie.count", tube.Name, float64(count))
