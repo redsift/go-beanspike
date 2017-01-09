@@ -868,6 +868,8 @@ func (tube *Tube) deleteZombieEntries(n int) (int, error) {
 			return 0, err
 		}
 
+		job := res.Record.Key.Value().GetObject().(int64)
+		tube.Delete(job)
 		count++
 	}
 
