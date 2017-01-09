@@ -124,7 +124,7 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 	// nil out body before deleting record to address aerospike limitations.
 	// also set status to DELETED
 	// Ref: https://discuss.aerospike.com/t/expired-deleted-data-reappears-after-server-is-restarted/470
-	policy := as.NewWritePolicy(0, 0) // set a small ttl
+	policy := as.NewWritePolicy(0, 0)
 	policy.RecordExistsAction = as.UPDATE_ONLY
 	policy.SendKey = true
 	policy.CommitLevel = as.COMMIT_MASTER
@@ -135,24 +135,8 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 	binSize := as.NewBin(AerospikeNameSize, 0)
 	binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymDeleted)
 
-	err = tube.Conn.aerospike.PutBins(policy, key, binBody, binCSize, binSize, binStatus)
-	if err != nil {
-		return false, err
-	}
-
-	if genID > 0 {
-		policy.Generation = genID
-		policy.GenerationPolicy = as.EXPECT_GEN_EQUAL
-
-		err = tube.Conn.aerospike.PutBins(policy, key, binBody, binCSize, binSize, binStatus)
-		if err != nil {
-			return false, err
-		}
-
-		policy.Generation = genID + 1
-		policy.Expiration = 1 // set a small ttl so record gets evicted
-		policy.GenerationPolicy = as.NONE
-
+	for i := 0; i <= int(genID); i++ {
+		policy.Generation = uint32(i)
 		err = tube.Conn.aerospike.PutBins(policy, key, binBody, binCSize, binSize, binStatus)
 		if err != nil {
 			return false, err
@@ -160,7 +144,6 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 	}
 
 	ex, err := tube.Conn.aerospike.Delete(nil, key)
-
 	if err != nil {
 		if tube.Conn != nil {
 			tube.Conn.stats("tube.delete.count", tube.Name, float64(1))
@@ -523,6 +506,7 @@ R:
 		}
 
 		if count == 0 {
+			_, _ = tube.deleteZombieEntries(AerospikeAdminScanSize)
 			break
 		}
 	}
@@ -847,6 +831,51 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 				return count, err
 			}
 			count++
+		}
+	}
+
+	return count, nil
+}
+
+func (tube *Tube) deleteZombieEntries(n int) (int, error) {
+	client := tube.Conn.aerospike
+
+	stm := as.NewStatement(AerospikeNamespace, tube.Name)
+	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymDeleted))
+
+	policy := as.NewQueryPolicy()
+	policy.RecordQueueSize = n
+
+	recordset, err := client.Query(policy, stm)
+	if err != nil {
+		return 0, err
+	}
+
+	defer recordset.Close()
+
+	type Entry struct {
+		generation uint32
+		key        *as.Key
+	}
+
+	count := 0
+	for res := range recordset.Results() {
+		if count >= AerospikeAdminScanSize {
+			break
+		}
+
+		if res.Err != nil {
+			return 0, err
+		}
+
+		count++
+	}
+
+	if count > 0 {
+		fmt.Println("Got zombie jobs, deleting %d jobs and continuing...", count)
+		// TODO: Log to statsd
+		if tube.Conn != nil {
+			tube.Conn.stats("tube.zombie.count", tube.Name, float64(count))
 		}
 	}
 
