@@ -398,7 +398,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 
 		_, err1 := tube.bumpReservedEntries(AerospikeAdminScanSize)
 		if err1 != nil {
-			fmt.Printf("Error bumping reserved entries the first time. %s", err1)
+			fmt.Printf("Error bumping reserved entries the first time. %s\n", err1)
 		}
 	}
 
@@ -492,7 +492,7 @@ R:
 		}
 		count, err1 := tube.bumpReservedEntries(AerospikeAdminScanSize)
 		if err1 != nil {
-			fmt.Printf("Error bumping reserved entries. %s", err1)
+			fmt.Printf("Error bumping reserved entries. %s\n", err1)
 		}
 
 		if count != 0 {
