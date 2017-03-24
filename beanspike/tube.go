@@ -13,8 +13,11 @@ import (
 	lz4 "github.com/cloudflare/golz4"
 )
 
-var ErrEmptyRecord = errors.New("ASSERT: Record empty")
-var ErrNotBuriedOrDelayed = errors.New("Job is not buried or delayed")
+var (
+	ErrEmptyRecord        = errors.New("ASSERT: Record empty")
+	ErrNotBuriedOrDelayed = errors.New("Job is not buried or delayed")
+	ErrJobNotFound        = errors.New("Job not found")
+)
 
 func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bool) (id int64, err error) {
 	id, err = tube.Conn.newJobID()
@@ -402,7 +405,6 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 		}
 	}
 
-R:
 	for i := 0; i < 2; i++ {
 		stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
 			AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries)
@@ -411,7 +413,8 @@ R:
 		policy := as.NewQueryPolicy()
 		policy.RecordQueueSize = AerospikeQueryQueueSize
 
-		recordset, err := client.Query(policy, stm)
+		var recordset *as.Recordset
+		recordset, err = client.Query(policy, stm)
 
 		if err != nil {
 			return 0, nil, 0, 0, err
@@ -496,7 +499,7 @@ R:
 		}
 
 		if count != 0 {
-			continue R
+			continue
 		}
 
 		// no jobs to return, use the cycles to admin the set
@@ -512,6 +515,9 @@ R:
 	}
 
 	// Some form of error or no job fall through
+	if err == nil {
+		err = ErrJobNotFound
+	}
 	return 0, nil, 0, 0, err
 }
 
