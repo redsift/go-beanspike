@@ -27,6 +27,7 @@ const (
 	AerospikeNameCompressedSize = "csize"
 	AerospikeNameSize           = "size"
 	AerospikeNameRetries        = "retries"
+	AerospikeNameRetryFlag      = "retryflag"
 
 	// For the scan policy
 	AerospikeQueryQueueSize = 4

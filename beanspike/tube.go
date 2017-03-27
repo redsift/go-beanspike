@@ -242,7 +242,11 @@ func (tube *Tube) Touch(id int64) error {
 	return client.Touch(policy, touch)
 }
 
-func (tube *Tube) Release(id int64, delay time.Duration, incr bool) error {
+func (tube *Tube) Release(id int64, delay time.Duration) error {
+	return tube.ReleaseWithRetry(id, delay, false, false)
+}
+
+func (tube *Tube) ReleaseWithRetry(id int64, delay time.Duration, incr, retryFlag bool) error {
 	client := tube.Conn.aerospike
 
 	key, err := as.NewKey(AerospikeNamespace, tube.Name, id)
@@ -282,7 +286,7 @@ func (tube *Tube) Release(id int64, delay time.Duration, incr bool) error {
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
 
-	bins := make([]*as.Bin, 0, 5)
+	bins := make([]*as.Bin, 0, 6)
 	if incr {
 		retries := 1
 		retriesVal := record.Bins[AerospikeNameRetries]
@@ -291,6 +295,15 @@ func (tube *Tube) Release(id int64, delay time.Duration, incr bool) error {
 			retries += 1
 		}
 		bins = append(bins, as.NewBin(AerospikeNameRetries, retries))
+	}
+
+	// Set retryflag
+	{
+		retryFlagValue := 0
+		if retryFlag {
+			retryFlagValue = 1
+		}
+		bins = append(bins, as.NewBin(AerospikeNameRetryFlag, retryFlagValue))
 	}
 
 	bins = append(bins, as.NewBin(AerospikeNameBy, as.NewNullValue()))
@@ -393,7 +406,7 @@ func (tube *Tube) KickJob(id int64) error {
 // this would be best implemented as a LLIST operation
 // including priority values when take_min is supported as per
 // https://discuss.aerospike.com/t/distributed-priority-queue-with-duplication-check/358
-func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, err error) {
+func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, retryFlag bool, err error) {
 	client := tube.Conn.aerospike
 
 	if tube.first {
@@ -407,7 +420,8 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 
 	for i := 0; i < 2; i++ {
 		stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
-			AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries)
+			AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries,
+			AerospikeNameRetryFlag)
 		stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
 
 		policy := as.NewQueryPolicy()
@@ -417,7 +431,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 		recordset, err = client.Query(policy, stm)
 
 		if err != nil {
-			return 0, nil, 0, 0, err
+			return 0, nil, 0, 0, false, err
 		}
 
 		defer func(rs *as.Recordset) {
@@ -447,12 +461,16 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 						reserve = AerospikeSymReservedTtr
 						binTtrExp, err = tube.timeJob(job, ttr)
 						if err != nil {
-							return 0, nil, 0, 0, err
+							return 0, nil, 0, 0, false, err
 						}
 					}
 
 					if retriesValue := res.Record.Bins[AerospikeNameRetries]; retriesValue != nil {
 						retries = retriesValue.(int)
+					}
+
+					if retryFlagValue := res.Record.Bins[AerospikeNameRetryFlag]; retryFlagValue != nil {
+						retryFlag = retryFlagValue.(int) > 0
 					}
 
 					lockErr := tube.attemptJobReservation(res.Record, reserve, binTtrExp)
@@ -465,10 +483,10 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 									// was compressed
 									body, err = decompress(body, ozValue.(int))
 									if err != nil {
-										return 0, nil, 0, 0, err
+										return 0, nil, 0, 0, false, err
 									}
 								} else {
-									return 0, nil, 0, 0,
+									return 0, nil, 0, 0, false,
 										errors.New("Could not establish original size of compressed content")
 								}
 							}
@@ -479,7 +497,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 						}
 
 						// success, we have this job
-						return job, body, ttr, retries, nil
+						return job, body, ttr, retries, retryFlag, nil
 					}
 					// else something happened to this job in the way
 					// TODO: Handle println
@@ -518,7 +536,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 	if err == nil {
 		err = ErrJobNotFound
 	}
-	return 0, nil, 0, 0, err
+	return 0, nil, 0, 0, false, err
 }
 
 func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason []byte, err error) {
