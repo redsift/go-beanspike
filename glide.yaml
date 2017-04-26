@@ -11,3 +11,5 @@ import:
   - package: github.com/cloudflare/golz4
     repo:    https://github.com/jmoiron/golz4
     version: 27f83594ae3e85936dd5c444ddd615632abbbbfb
+  - package: github.com/bluele/gcache
+    version: b9993a9fff7b10a1fd0404d8aa4a039cb625534d
