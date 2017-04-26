@@ -13,3 +13,13 @@ import:
     version: 27f83594ae3e85936dd5c444ddd615632abbbbfb
   - package: github.com/bluele/gcache
     version: b9993a9fff7b10a1fd0404d8aa4a039cb625534d
+  - package: github.com/redsift/go-shared
+    version: bc582bc6a753064aa2af3def8a9878dc75376554
+    subpackages:
+    - constants
+  - package: github.com/redsift/go-utils
+    version: 65ffa20a43413de08f67411c820a2c7860047a34
+    subpackages:
+    - errs
+    - stats
+    - statsd

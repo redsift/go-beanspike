@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/bluele/gcache"
-	"github.com/redsift/go-shared/bsjob"
 	"github.com/redsift/go-shared/constants"
 	"github.com/redsift/go-utils/errs"
 	"github.com/redsift/go-utils/stats"
@@ -25,7 +24,7 @@ type TubeID string
 
 type TaskHandler interface {
 	// ReserveAndDecode reserve a task and decode it to appropriate value type
-	ReserveAndDecode(*Tube) (*bsjob.Job, interface{}, error)
+	ReserveAndDecode(*Tube) (*Job, interface{}, error)
 	// Handle processes incoming message.
 	// Calling context.CancelFunc stops all underlying goroutines and release a beanspike job
 	Handle(context.CancelFunc, interface{})
@@ -110,7 +109,7 @@ func (c *Client) Handle(id TubeID, h TaskHandler) error {
 					release := func(v interface{}) func() {
 						return func() { h.OnRelease(v) }
 					}
-					go func(ctx context.Context, job *bsjob.Job, f func()) {
+					go func(ctx context.Context, job *Job, f func()) {
 						c.handle(ctx, tube, job, f)
 						c.jobs.Done()
 					}(ctx, job, release(payload))
@@ -131,7 +130,7 @@ var backoffDuration = func() func(uint) time.Duration {
 	}
 }()
 
-func (c *Client) handle(ctx context.Context, tube *Tube, job *bsjob.Job, release func()) {
+func (c *Client) handle(ctx context.Context, tube *Tube, job *Job, release func()) {
 	ticker := time.NewTicker(job.TTR / 2) // TODO (dmitry) reuse timers to save allocations
 	defer func() {
 		release()
