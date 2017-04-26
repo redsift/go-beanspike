@@ -3,10 +3,9 @@ package beanspike
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
-
-	"math"
 
 	as "github.com/aerospike/aerospike-client-go"
 	pt "github.com/aerospike/aerospike-client-go/types/particle_type"

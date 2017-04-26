@@ -3,9 +3,8 @@ package beanspike
 import (
 	"fmt"
 	"os"
-	"sync/atomic"
-
 	"strconv"
+	"sync/atomic"
 
 	as "github.com/aerospike/aerospike-client-go"
 )
