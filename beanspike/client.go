@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/bluele/gcache"
-	"github.com/redsift/go-shared/constants"
-	"github.com/redsift/go-utils/errs"
-	"github.com/redsift/go-utils/stats"
-	"github.com/redsift/go-utils/statsd"
+)
+
+const (
+	IdleInTubeTime = 2 * time.Second
+	OutTubeTTR     = 30 * time.Second
 )
 
 var (
@@ -33,21 +34,19 @@ type TaskHandler interface {
 }
 
 type Client struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	conn      *Conn
-	collector stats.Collector
-	jobs      sync.WaitGroup
-	outTubes  gcache.Cache
+	ctx      context.Context
+	cancel   context.CancelFunc
+	conn     *Conn
+	jobs     sync.WaitGroup
+	outTubes gcache.Cache
 }
 
-func NewClient(ctx context.Context, commit string) *Client {
+func NewClient(ctx context.Context) *Client {
 	ctx, cancel := context.WithCancel(ctx)
 
 	client := &Client{
-		ctx:       ctx,
-		cancel:    cancel,
-		collector: statsd.New(commit),
+		ctx:    ctx,
+		cancel: cancel,
 	}
 
 	createTube := func(k interface{}) (interface{}, error) {
@@ -63,11 +62,11 @@ func NewClient(ctx context.Context, commit string) *Client {
 	return client
 }
 
-func (c *Client) Connect() error {
+func (c *Client) Connect(statsHandler func(string, string, float64)) error {
 	if c.conn != nil {
 		return ErrAlreadyConnected
 	}
-	conn, err := DialDefault(statsd.NewBeanspikeStats(c.collector).Handler)
+	conn, err := DialDefault(statsHandler)
 	if err != nil {
 		return err
 	}
@@ -84,11 +83,10 @@ func (c *Client) Close() {
 func (c *Client) Handle(id TubeID, h TaskHandler) error {
 	tube, err := c.conn.Use(string(id))
 	if err != nil {
-		c.collectCoffeeCode(errs.Turkish, err)
 		return err
 	}
 	go func() {
-		ticker := time.Tick(constants.IdleInTubeTime)
+		ticker := time.Tick(IdleInTubeTime)
 	LOOP:
 		for {
 			select {
@@ -158,7 +156,6 @@ func (c *Client) Put(tubeID string, v interface{}) (int64, error) {
 	)
 	tube, err = c.outTubes.Get(tubeID)
 	if err != nil {
-		c.collectCoffeeCode(errs.Turkish, err)
 		return 0, err
 	}
 
@@ -169,14 +166,6 @@ func (c *Client) Put(tubeID string, v interface{}) (int64, error) {
 	}
 
 	var id int64
-	id, err = tube.(*Tube).Put(b, 0, constants.OutTubeTTR, true)
-	c.collectCoffeeCode(errs.Turkish, err)
+	id, err = tube.(*Tube).Put(b, 0, OutTubeTTR, true)
 	return id, err
-}
-
-func (c *Client) collectCoffeeCode(f errs.InternalState, e error) {
-	if e == nil {
-		return
-	}
-	c.collector.Error(errs.WrapWithCode(f, e), nil)
 }
