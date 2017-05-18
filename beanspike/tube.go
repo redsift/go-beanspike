@@ -891,9 +891,14 @@ func (tube *Tube) deleteZombieEntries(n int) (int, error) {
 			return 0, err
 		}
 
-		job := res.Record.Key.Value().GetObject().(int64)
-		tube.Delete(job)
-		count++
+		if key := res.Record.Key.Value(); key != nil && key.GetType() == pt.INTEGER {
+			job := res.Record.Key.Value().GetObject().(int64)
+			tube.Delete(job)
+			count++
+		} else {
+			tube.Conn.aerospike.Delete(nil, res.Record.Key)
+			count++
+		}
 	}
 
 	if count > 0 {
