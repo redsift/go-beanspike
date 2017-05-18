@@ -326,7 +326,7 @@ func (tube *Tube) ReleaseWithRetry(id int64, delay time.Duration, incr, retryFla
 	return client.PutBins(writePolicy, record.Key, bins...)
 }
 
-func (tube *Tube) Bury(id int64, reason []byte) error {
+func (tube *Tube) Bury(id int64, reason []byte, ttl uint32) error {
 	client := tube.Conn.aerospike
 
 	key, err := as.NewKey(AerospikeNamespace, tube.Name, id)
@@ -354,6 +354,10 @@ func (tube *Tube) Bury(id int64, reason []byte) error {
 	writePolicy := as.NewWritePolicy(record.Generation, 0)
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
+
+	if ttl > 0 {
+		writePolicy.Expiration = ttl
+	}
 
 	binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymBuried)
 	binReason := as.NewBin(AerospikeNameReason, reason)

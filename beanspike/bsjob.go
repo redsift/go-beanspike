@@ -56,7 +56,11 @@ func (job *Job) ReleaseWithRetry(delay time.Duration, incr, retryFlag bool) erro
 }
 
 func (job *Job) Bury(reason string) error {
-	return job.Tube.Bury(job.ID, []byte(reason))
+	return job.Tube.Bury(job.ID, []byte(reason), 0)
+}
+
+func (job *Job) BuryWithTTL(reason string, ttl uint32) error {
+	return job.Tube.Bury(job.ID, []byte(reason), ttl)
 }
 
 func (job *Job) Monitor() chan struct{} {

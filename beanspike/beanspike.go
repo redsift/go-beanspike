@@ -94,19 +94,3 @@ func genID() string {
 	}
 	return fmt.Sprintf("????????:%v:%v", pid, count)
 }
-
-/*var portRE = regexp.MustCompile(`^tcp:\/\/(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b):(\d{1,5})$`)
-
-// Parse port check is the port var is actually a Docker ENV
-// as this can easily happen
-func parsePort(portStr string) (host string, port int, err error) {
-	match := portRE.FindAllStringSubmatch(portStr, -1)
-	if match != nil {
-		// Docker style port ENV
-		host = match[0][1]
-		portStr = match[0][2]
-	}
-
-	port, err = strconv.Atoi(portStr)
-	return host, port, err
-}*/

@@ -39,7 +39,7 @@ func cleanup(t *testing.T, conn *Conn, tube *Tube, id int64) {
 }
 
 func tube(t *testing.T) (*Conn, *Tube) {
-	conn, err := DialDefault(nil)
+	conn, err := Dial("", "localhost", 3000, nil)
 	if err != nil {
 		// fatal as looks like nothing else will work
 		t.Fatalf("Unable to connect. %v", err)
@@ -567,6 +567,98 @@ func TestRetriesWithoutIncrement(t *testing.T) {
 		}
 
 		i += 1
+	}
+
+	conn.Delete(unitTube)
+	deleteSleep()
+}
+
+func TestBury(t *testing.T) {
+	conn, tube := tube(t)
+
+	i := 0
+	for i < 5 {
+		_, err := tube.Put([]byte("hello"), 0, 0, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		i += 1
+	}
+
+	i = 0
+	for i < 5 {
+		id, _, _, _, _, err := tube.Reserve()
+		if id == 0 {
+			t.Fatalf("Error reserving job")
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		err = tube.Bury(id, []byte("test"), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		i += 1
+	}
+
+	time.Sleep(5 * time.Second)
+
+	stats, err := tube.Stats()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if stats.Buried != 5 {
+		t.Fatalf("Expected to find %d buried jobs, got %d instead", 5, stats.Buried)
+	}
+
+	conn.Delete(unitTube)
+	deleteSleep()
+}
+
+func TestBuryWithTTL(t *testing.T) {
+	conn, tube := tube(t)
+
+	i := 0
+	for i < 5 {
+		_, err := tube.Put([]byte("hello"), 0, 0, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		i += 1
+	}
+
+	i = 0
+	for i < 5 {
+		id, _, _, _, _, err := tube.Reserve()
+		if id == 0 {
+			t.Fatalf("Error reserving job")
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		err = tube.Bury(id, []byte("test"), 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		i += 1
+	}
+
+	time.Sleep(5 * time.Second)
+
+	stats, err := tube.Stats()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if stats.Buried != 0 {
+		t.Fatalf("Expected to find %d buried jobs, got %d instead", 0, stats.Buried)
 	}
 
 	conn.Delete(unitTube)
