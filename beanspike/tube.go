@@ -741,9 +741,9 @@ func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 		}
 	}
 
-	batch := as.NewPolicy()
-	batch.Priority = as.HIGH
-	records, err := client.BatchGetHeader(batch, keys)
+	batchPolicy := as.NewBatchPolicy()
+	batchPolicy.Priority = as.HIGH
+	records, err := client.BatchGetHeader(batchPolicy, keys)
 	if err != nil {
 		return 0, err
 	}
@@ -827,9 +827,9 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 	}
 
 	// batch query against the expire list, if entry is missing, bump to ready
-	batch := as.NewPolicy()
-	batch.Priority = as.HIGH
-	records, err := client.BatchGetHeader(batch, keys)
+	batchPolicy := as.NewBatchPolicy()
+	batchPolicy.Priority = as.HIGH
+	records, err := client.BatchGetHeader(batchPolicy, keys)
 	if err != nil {
 		return 0, err
 	}
