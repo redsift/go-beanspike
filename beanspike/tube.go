@@ -411,10 +411,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 	if tube.first {
 		tube.first = false
 
-		_, err1 := tube.bumpReservedEntries(AerospikeAdminScanSize)
-		if err1 != nil {
-			fmt.Printf("Error bumping reserved entries the first time. %s\n", err1)
-		}
+		_, _ = tube.bumpReservedEntries(AerospikeAdminScanSize)
 	}
 
 	for i := 0; i < 2; i++ {
@@ -510,20 +507,13 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 				}
 			}
 		}
-		count, err1 := tube.bumpReservedEntries(AerospikeAdminScanSize)
-		if err1 != nil {
-			fmt.Printf("Error bumping reserved entries. %s\n", err1)
-		}
-
+		count, _ := tube.bumpReservedEntries(AerospikeAdminScanSize)
 		if count != 0 {
 			continue
 		}
 
 		// no jobs to return, use the cycles to admin the set
-		count, err1 = tube.bumpDelayedEntries(AerospikeAdminScanSize)
-		if err1 != nil {
-			fmt.Printf("Error bumping delayed entries. %s", err1)
-		}
+		count, _ = tube.bumpDelayedEntries(AerospikeAdminScanSize)
 
 		if count == 0 {
 			_, _ = tube.deleteZombieEntries(AerospikeAdminScanSize)
@@ -694,7 +684,6 @@ func (tube *Tube) shouldOperate(scan string) bool {
 // if required
 func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 	if !tube.shouldOperate(AerospikeKeySuffixTtr) {
-		// println("skipping operation")
 		return 0, nil
 	}
 
@@ -777,7 +766,6 @@ func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 // returns the number of jobs processed and if any action was taken
 func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 	if !tube.shouldOperate(AerospikeKeySuffixDelayed) {
-		// println("skipping operation")
 		return 0, nil
 	}
 
@@ -902,7 +890,6 @@ func (tube *Tube) deleteZombieEntries(n int) (int, error) {
 	}
 
 	if count > 0 {
-		fmt.Printf("Got zombie jobs, deleting %d jobs in tube %s and continuing...\n", count, tube.Name)
 		// TODO: Log to statsd
 		if tube.Conn != nil {
 			tube.Conn.stats("tube.zombie.count", tube.Name, float64(count))
