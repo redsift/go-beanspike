@@ -1,4 +1,4 @@
-# go-rsrpc
+# go-beanspike
 
 [[constraint]]
   name = "github.com/aerospike/aerospike-client-go"
