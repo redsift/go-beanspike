@@ -1,0 +1,10 @@
+# go-rsrpc
+
+[[constraint]]
+  name = "github.com/aerospike/aerospike-client-go"
+  version = "^1.31.0"
+
+[[constraint]]
+  name = "github.com/cloudflare/golz4"
+  revision = "27f83594ae3e85936dd5c444ddd615632abbbbfb"
+  source = "github.com/jmoiron/golz4"
