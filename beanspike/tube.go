@@ -402,9 +402,6 @@ func (tube *Tube) KickJob(id int64) error {
 	return client.PutBins(writePolicy, record.Key, binStatus, binReason, binDelay)
 }
 
-// this would be best implemented as a LLIST operation
-// including priority values when take_min is supported as per
-// https://discuss.aerospike.com/t/distributed-priority-queue-with-duplication-check/358
 func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, retryFlag bool, err error) {
 	client := tube.Conn.aerospike
 

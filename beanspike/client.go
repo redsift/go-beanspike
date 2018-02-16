@@ -57,7 +57,7 @@ func NewClient(ctx context.Context) *Client {
 	}
 
 	// Hope it was correct answer
-	client.outTubes = gcache.New(42).ARC().LoaderFunc(createTube).Build()
+	client.outTubes = gcache.New(42).LRU().LoaderFunc(createTube).Build()
 
 	return client
 }
