@@ -67,7 +67,7 @@ func TestConnection(t *testing.T) {
 func TestPut(t *testing.T) {
 	conn, tube := tube(t)
 
-	id, err := tube.Put([]byte("hello"), 0, 0, false)
+	id, err := tube.Put([]byte("hello"), 0, 0, false, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,12 +85,12 @@ func TestReserve(t *testing.T) {
 	conn, tube := tube(t)
 
 	payload := []byte("hello")
-	id, err := tube.Put(payload, 0, 0, false)
+	id, err := tube.Put(payload, 0, 0, false, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	id, body, _, _, _, err := tube.Reserve()
+	id, body, _, _, _, metadata, err := tube.Reserve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,10 @@ func TestReserve(t *testing.T) {
 		t.Fatalf("Job payload does not match expected size got:%v vs sent:%v", len(body), len(payload))
 	}
 	if !bytes.Equal(payload, body) {
-		t.Fatal("Body do not match submitted payload")
+		t.Fatal("Body does not match submitted payload")
+	}
+	if metadata != "metadata" {
+		t.Fatal("metadata does not match")
 	}
 
 	cleanup(t, conn, tube, id)
@@ -118,12 +121,12 @@ func TestReserveCompressedRnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, err := tube.Put(payload, 0, 0, true)
+	id, err := tube.Put(payload, 0, 0, true, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	id, body, _, _, _, err := tube.Reserve()
+	id, body, _, _, _, _, err := tube.Reserve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,12 +150,12 @@ func TestReserveCompressedStr(t *testing.T) {
 	sz := 100 * 1024
 	payload := []byte(strings.Repeat("R", sz))
 
-	id, err := tube.Put(payload, 0, 0, true)
+	id, err := tube.Put(payload, 0, 0, true, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	id, body, _, _, _, err := tube.Reserve()
+	id, body, _, _, _, _, err := tube.Reserve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +179,7 @@ func TestPutTtr(t *testing.T) {
 	ttrVal := 1 * time.Second
 
 	// Make sure the Job it Put
-	id, err := tube.Put([]byte("hello"), 0, ttrVal, false)
+	id, err := tube.Put([]byte("hello"), 0, ttrVal, false, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +188,7 @@ func TestPutTtr(t *testing.T) {
 	}
 
 	// Make sure the Job was reserved
-	idR, _, ttr, _, _, err := tube.Reserve()
+	idR, _, ttr, _, _, _, err := tube.Reserve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +200,7 @@ func TestPutTtr(t *testing.T) {
 	}
 
 	// Make sure no job is available to be reserved
-	idR2, _, _, _, _, err := tube.Reserve()
+	idR2, _, _, _, _, _, err := tube.Reserve()
 	if err != nil && err != ErrJobNotFound {
 		t.Fatal(err)
 	}
@@ -209,7 +212,7 @@ func TestPutTtr(t *testing.T) {
 	time.Sleep(max(AerospikeAdminDelay*time.Second*2, ttrVal*2))
 
 	// Make sure Job has timed out and can be reserved
-	idR3, _, _, _, _, err := tube.Reserve()
+	idR3, _, _, _, _, _, err := tube.Reserve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +228,7 @@ func TestPutTouch(t *testing.T) {
 
 	ttrVal := 2 * time.Second
 
-	id, err := tube.Put([]byte("hello"), 0, ttrVal, false)
+	id, err := tube.Put([]byte("hello"), 0, ttrVal, false, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +237,7 @@ func TestPutTouch(t *testing.T) {
 		t.Fatal("No job put")
 	}
 
-	idR, _, ttr, _, _, err := tube.Reserve()
+	idR, _, ttr, _, _, _, err := tube.Reserve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +259,7 @@ func TestPutTouch(t *testing.T) {
 
 	time.Sleep(time.Second * 1)
 
-	idR3, _, _, _, _, err := tube.Reserve()
+	idR3, _, _, _, _, _, err := tube.Reserve()
 	if err != nil && err != ErrJobNotFound {
 		t.Fatal(err)
 	}
@@ -273,7 +276,7 @@ func TestRelease(t *testing.T) {
 
 	magicTtr := 42 * time.Second
 
-	id, err := tube.Put([]byte("hello"), 0, magicTtr, false)
+	id, err := tube.Put([]byte("hello"), 0, magicTtr, false, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +288,7 @@ func TestRelease(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	idR, _, ttr, _, _, err := tube.Reserve()
+	idR, _, ttr, _, _, _, err := tube.Reserve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +302,7 @@ func TestRelease(t *testing.T) {
 		t.Fatalf("Returned TTR %v not the expected TTR %v", ttr, magicTtr)
 	}
 
-	idN, _, _, _, _, err := tube.Reserve()
+	idN, _, _, _, _, _, err := tube.Reserve()
 	if idN != 0 {
 		t.Fatal("Unexpected job reserved")
 	}
@@ -309,7 +312,7 @@ func TestRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	idN, _, _, _, _, err = tube.Reserve()
+	idN, _, _, _, _, _, err = tube.Reserve()
 	if idN == 0 {
 		t.Log(err)
 		t.Fatal("No job reserved after release")
@@ -324,7 +327,7 @@ func TestRelease(t *testing.T) {
 func TestDelete(t *testing.T) {
 	_, tube := tube(t)
 
-	id, err := tube.Put([]byte("to delete"), 0*time.Second, 120*time.Second, false)
+	id, err := tube.Put([]byte("to delete"), 0*time.Second, 120*time.Second, false, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,19 +359,19 @@ func TestStats(t *testing.T) {
 
 	// Submit `basicjobs+compressjobs` jobs, reserve 1
 	for i := 0; i < basicjobs; i++ {
-		_, err := tube.Put(basic, 0, 0, false)
+		_, err := tube.Put(basic, 0, 0, false, "metadata")
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	for i := 0; i < compressjobs; i++ {
-		_, err := tube.Put(compress, 0, 0, true)
+		_, err := tube.Put(compress, 0, 0, true, "metadata")
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	_, _, _, _, _, err := tube.Reserve()
+	_, _, _, _, _, _, err := tube.Reserve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,11 +451,11 @@ func TestBumpDelayed(t *testing.T) {
 	conn, tube := tube(t)
 
 	delay := AerospikeAdminDelay + 1
-	idJ, err := tube.Put([]byte("hello"), time.Duration(delay)*time.Second, 0, false)
+	idJ, err := tube.Put([]byte("hello"), time.Duration(delay)*time.Second, 0, false, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _, _, _, _, err := tube.Reserve()
+	id, _, _, _, _, _, err := tube.Reserve()
 	if err != nil && err != ErrJobNotFound {
 		t.Fatal(err)
 	}
@@ -463,7 +466,7 @@ func TestBumpDelayed(t *testing.T) {
 	// sleep for timeout
 	time.Sleep(time.Duration(delay*2) * time.Second)
 
-	id, _, _, _, _, err = tube.Reserve()
+	id, _, _, _, _, _, err = tube.Reserve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,7 +481,7 @@ func TestBumpDelayed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _, _, _, _, err = tube.Reserve()
+	id, _, _, _, _, _, err = tube.Reserve()
 	if err != nil && err != ErrJobNotFound {
 		t.Fatal(err)
 	}
@@ -488,7 +491,7 @@ func TestBumpDelayed(t *testing.T) {
 
 	time.Sleep(time.Duration(delay*2) * time.Second)
 
-	id, _, _, _, _, err = tube.Reserve()
+	id, _, _, _, _, _, err = tube.Reserve()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,14 +505,14 @@ func TestBumpDelayed(t *testing.T) {
 func TestRetries(t *testing.T) {
 	conn, tube := tube(t)
 
-	_, err := tube.Put([]byte("hello"), 0, 0, false)
+	_, err := tube.Put([]byte("hello"), 0, 0, false, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	i := 0
 	for i < 5 {
-		id, _, _, retries, retryFlag, err := tube.Reserve()
+		id, _, _, retries, retryFlag, _, err := tube.Reserve()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -537,7 +540,7 @@ func TestRetries(t *testing.T) {
 func TestRetriesWithoutIncrement(t *testing.T) {
 	conn, tube := tube(t)
 
-	_, err := tube.Put([]byte("hello"), 0, 0, false)
+	_, err := tube.Put([]byte("hello"), 0, 0, false, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,7 +548,7 @@ func TestRetriesWithoutIncrement(t *testing.T) {
 	i := 0
 	for i < 5 {
 		time.Sleep(2 * time.Second)
-		id, _, _, retries, retryFlag, err := tube.Reserve()
+		id, _, _, retries, retryFlag, _, err := tube.Reserve()
 		if id == 0 {
 			continue
 		}
@@ -585,7 +588,7 @@ func BenchmarkPut(b *testing.B) {
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		_, err := tube.Put(val, 0, 0, false)
+		_, err := tube.Put(val, 0, 0, false, "metadata")
 		if err != nil {
 			b.Fatalf("Error putting Job. %v", err)
 		}
@@ -606,12 +609,12 @@ func BenchmarkReserve(b *testing.B) {
 
 	val := []byte("hello")
 	for n := 0; n < b.N; n++ {
-		tube.Put(val, 0, 0, false)
+		tube.Put(val, 0, 0, false, "metadata")
 	}
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		id, _, _, _, _, err := tube.Reserve()
+		id, _, _, _, _, _, err := tube.Reserve()
 		if err != nil {
 			b.Fatalf("Error reserving Job. %v", err)
 		}
@@ -633,11 +636,11 @@ func BenchmarkRelease(b *testing.B) {
 
 	val := []byte("hello")
 	for n := 0; n < b.N; n++ {
-		tube.Put(val, 0, 0, false)
+		tube.Put(val, 0, 0, false, "metadata")
 	}
 	ids := make([]int64, b.N)
 	for n := 0; n < b.N; n++ {
-		id, _, _, _, _, err := tube.Reserve()
+		id, _, _, _, _, _, err := tube.Reserve()
 		if err != nil {
 			b.Fatalf("Error reserving Job. %v", err)
 		}

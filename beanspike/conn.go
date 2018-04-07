@@ -83,6 +83,26 @@ func (conn *Conn) Use(name string) (*Tube, error) {
 			}
 		}
 	}
+
+	task1, err := conn.aerospike.CreateIndex(nil, AerospikeNamespace, name, "idx_tube_"+name+"_"+AerospikeNameMetadata, AerospikeNameMetadata, as.STRING)
+	if err != nil {
+		if ae, ok := err.(ast.AerospikeError); ok && ae.ResultCode() == ast.INDEX_FOUND {
+			// skipping index creation
+			// println("Skipping index creation")
+		} else {
+			return nil, err
+		}
+	}
+
+	if task1 == nil {
+		//TODO: Check that this is ok
+	} else {
+		for ierr := range task1.OnComplete() {
+			if ierr != nil {
+				return nil, ierr
+			}
+		}
+	}
 	tube := &Tube{Conn: conn, Name: name, first: true}
 
 	tubesMap.m[name] = tube

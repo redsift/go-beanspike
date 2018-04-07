@@ -85,7 +85,7 @@ func (job *Job) Monitor() chan struct{} {
 }
 
 func Reserve(tube *Tube) (*Job, error) {
-	id, body, ttr, retries, retryFlag, err := tube.Reserve()
+	id, body, ttr, retries, retryFlag, _, err := tube.Reserve()
 
 	if err != nil || id == 0 || body == nil {
 		return nil, err
