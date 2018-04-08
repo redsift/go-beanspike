@@ -157,8 +157,53 @@ func TestReserveBatched1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, v := range jobs {
-		t.Logf("id=%d,%s", v.ID, v.Body)
+
+	if len(jobs) == 0 {
+		t.Log(err)
+		t.Fatal("No job reserved")
+	}
+	if len(jobs) != 1 {
+		t.Fatal("expecting 1 job but got", len(jobs))
+	}
+	if jobs[0].ID != id {
+		t.Fatalf("expecting job id %d but got %d", id, jobs[0].ID)
+	}
+
+	jobs, err = tube.ReserveBatch(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(jobs) == 0 {
+		t.Log(err)
+		t.Fatal("No job reserved")
+	}
+	if len(jobs) != 1 {
+		t.Fatal("expecting 1 job but got", len(jobs))
+	}
+	if jobs[0].ID != id1 {
+		t.Fatalf("expecting job id %d but got %d", id1, jobs[0].ID)
+	}
+
+	cleanup(t, conn, tube, id)
+}
+
+func TestReserveBatchedNoMetadata(t *testing.T) {
+	conn, tube := tube(t)
+
+	id, err := tube.Put([]byte("hello"), 0, 0, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id1, err := tube.Put([]byte("hi"), 0, 0, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	jobs, err := tube.ReserveBatch(2)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	if len(jobs) == 0 {
