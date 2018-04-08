@@ -26,12 +26,12 @@ func max(a time.Duration, b time.Duration) time.Duration {
 func cleanup(t *testing.T, conn *Conn, tube *Tube, id int64) {
 	err := tube.ReleaseWithRetry(id, 0, true, true)
 	if err != nil {
-		t.Fatalf("Error releasing job: %d", id)
+		t.Fatalf("Error releasing job: %d. %s", id, err)
 	}
 
 	_, err = tube.Delete(id)
 	if err != nil {
-		t.Fatalf("Error deleting job: %d", id)
+		t.Fatalf("Error deleting job: %d. %s", id, err)
 	}
 
 	conn.Delete(unitTube)
@@ -106,6 +106,86 @@ func TestReserve(t *testing.T) {
 	}
 	if metadata != "metadata" {
 		t.Fatal("metadata does not match")
+	}
+
+	cleanup(t, conn, tube, id)
+}
+
+func TestReserveBatched(t *testing.T) {
+	conn, tube := tube(t)
+
+	id, err := tube.Put([]byte("hello"), 0, 0, false, "metadata")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = tube.Put([]byte("hi"), 0, 0, false, "metadata")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	jobs, err := tube.ReserveBatch(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(jobs) == 0 {
+		t.Log(err)
+		t.Fatal("No job reserved")
+	}
+	if len(jobs) != 2 {
+		t.Fatal("expecting 2 jobs but got", len(jobs))
+	}
+
+	cleanup(t, conn, tube, id)
+}
+
+func TestReserveBatched1(t *testing.T) {
+	conn, tube := tube(t)
+
+	id, err := tube.Put([]byte("hello"), 0, 0, false, "metadata")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id1, err := tube.Put([]byte("hi"), 0, 0, false, "metadata1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	jobs, err := tube.ReserveBatch(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range jobs {
+		t.Logf("id=%d,%s", v.ID, v.Body)
+	}
+
+	if len(jobs) == 0 {
+		t.Log(err)
+		t.Fatal("No job reserved")
+	}
+	if len(jobs) != 1 {
+		t.Fatal("expecting 1 job but got", len(jobs))
+	}
+	if jobs[0].ID != id {
+		t.Fatalf("expecting job id %d but got %d", id, jobs[0].ID)
+	}
+
+	jobs, err = tube.ReserveBatch(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(jobs) == 0 {
+		t.Log(err)
+		t.Fatal("No job reserved")
+	}
+	if len(jobs) != 1 {
+		t.Fatal("expecting 1 job but got", len(jobs))
+	}
+	if jobs[0].ID != id1 {
+		t.Fatalf("expecting job id %d but got %d", id1, jobs[0].ID)
 	}
 
 	cleanup(t, conn, tube, id)

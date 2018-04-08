@@ -64,7 +64,8 @@ func (conn *Conn) Use(name string) (*Tube, error) {
 		return t, nil
 	}
 
-	task, err := conn.aerospike.CreateIndex(nil, AerospikeNamespace, name, "idx_tube_"+name+"_"+AerospikeNameStatus, AerospikeNameStatus, as.STRING)
+	task, err := conn.aerospike.CreateIndex(nil, AerospikeNamespace, name,
+		"idx_tube_"+name+"_"+AerospikeNameStatus, AerospikeNameStatus, as.STRING)
 	if err != nil {
 		if ae, ok := err.(ast.AerospikeError); ok && ae.ResultCode() == ast.INDEX_FOUND {
 			// skipping index creation
@@ -84,7 +85,8 @@ func (conn *Conn) Use(name string) (*Tube, error) {
 		}
 	}
 
-	task1, err := conn.aerospike.CreateIndex(nil, AerospikeNamespace, name, "idx_tube_"+name+"_"+AerospikeNameMetadata, AerospikeNameMetadata, as.STRING)
+	task1, err := conn.aerospike.CreateIndex(nil, AerospikeNamespace, name,
+		"idx_tube_"+name+"_"+AerospikeNameMetadata, AerospikeNameMetadata, as.STRING)
 	if err != nil {
 		if ae, ok := err.(ast.AerospikeError); ok && ae.ResultCode() == ast.INDEX_FOUND {
 			// skipping index creation

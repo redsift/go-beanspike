@@ -586,6 +586,14 @@ func (tube *Tube) ReserveBatch(batchSize int) (jobs []*Job, err error) {
 					err = res.Err
 				}
 			} else {
+				if st, ok := res.Record.Bins[AerospikeNameStatus].(string); ok {
+					if st != AerospikeSymReady {
+						continue
+					}
+				} else {
+					continue
+				}
+
 				var body []byte
 				bodyVal := res.Record.Bins[AerospikeNameBody]
 				if bodyVal != nil {
