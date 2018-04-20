@@ -15,6 +15,7 @@ const (
 
 	AerospikeMetadataSet = "metadata"
 
+	// Bin names. Don't exceed 14 chars
 	AerospikeNameStatus         = "status"
 	AerospikeNameBody           = "body"
 	AerospikeNameBy             = "by"
@@ -29,7 +30,7 @@ const (
 	AerospikeNameRetries        = "retries"
 	AerospikeNameRetryFlag      = "retryflag"
 	AerospikeNameMetadata       = "metadata"
-	AerospikeNameBuriedMetadata = "buried_metadata"
+	AerospikeNameBuriedMetadata = "buried_meta"
 
 	// For the scan policy
 	AerospikeQueryQueueSize = 4
