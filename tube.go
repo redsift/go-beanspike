@@ -1075,6 +1075,10 @@ func (tube *Tube) attemptJobReservation(record *as.Record, status string, binTtr
 	return tube.Conn.aerospike.PutBins(writePolicy, record.Key, bins...)
 }
 
+func (tube *Tube) BumpReservedEntries() (int, error) {
+	return tube.bumpReservedEntries(AerospikeAdminScanSize)
+}
+
 func registerUDFs(client *as.Client) error {
 	for _ = range time.Tick(100 * time.Millisecond) {
 		udfs, err := client.ListUDF(nil)
