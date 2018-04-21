@@ -568,7 +568,7 @@ func (tube *Tube) ReserveBatch(batchSize int) (jobs []*Job, err error) {
 		stm.Addfilter(as.NewEqualFilter(AerospikeNameMetadata, metadata))
 
 		policy := as.NewQueryPolicy()
-		policy.RecordQueueSize = AerospikeQueryQueueSize
+		policy.RecordQueueSize = batchSize
 
 		var recordset *as.Recordset
 		recordset, err = client.Query(policy, stm)
