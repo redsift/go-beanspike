@@ -557,7 +557,7 @@ func (tube *Tube) ReserveBatch(batchSize int) (jobs []*Job, err error) {
 
 	client := tube.Conn.aerospike
 
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 2; i++ {
 		if len(jobs) >= batchSize {
 			return jobs, nil
 		}
