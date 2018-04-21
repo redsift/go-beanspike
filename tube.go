@@ -587,7 +587,7 @@ func (tube *Tube) ReserveBatch(batchSize int) (jobs []*Job, err error) {
 				}
 			} else {
 				if st, ok := res.Record.Bins[AerospikeNameStatus].(string); ok {
-					if st != AerospikeSymReady {
+					if !(st == AerospikeSymReady || st == AerospikeSymDelayed) {
 						continue
 					}
 				} else {
