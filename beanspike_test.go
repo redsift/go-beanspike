@@ -143,12 +143,12 @@ func TestReserveBatched(t *testing.T) {
 func TestReserveBatchedDelayed(t *testing.T) {
 	conn, tube := tube(t)
 
-	id, err := tube.Put([]byte("hello"), 10, 0, false, "metadata")
+	id, err := tube.Put([]byte("hello"), 10, 30, false, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = tube.Put([]byte("hi"), 0, 0, false, "metadata")
+	_, err = tube.Put([]byte("hi"), 0, 30, false, "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,6 +164,13 @@ func TestReserveBatchedDelayed(t *testing.T) {
 	}
 	if len(jobs) != 2 {
 		t.Fatal("expecting 2 jobs but got", len(jobs))
+	}
+
+	for _, job := range jobs {
+		err := job.Touch()
+		if err != nil {
+			t.Fatalf("Error touching job: %s", err)
+		}
 	}
 
 	cleanup(t, conn, tube, id)

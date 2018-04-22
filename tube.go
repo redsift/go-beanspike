@@ -587,7 +587,7 @@ func (tube *Tube) ReserveBatch(batchSize int) (jobs []*Job, err error) {
 				}
 			} else {
 				if st, ok := res.Record.Bins[AerospikeNameStatus].(string); ok {
-					if !(st == AerospikeSymReady || st == AerospikeSymDelayed) {
+					if st != AerospikeSymReady {
 						continue
 					}
 				} else {
@@ -1077,6 +1077,10 @@ func (tube *Tube) attemptJobReservation(record *as.Record, status string, binTtr
 
 func (tube *Tube) BumpReservedEntries() (int, error) {
 	return tube.bumpReservedEntries(AerospikeAdminScanSize)
+}
+
+func (tube *Tube) BumpDelayedEntries() (int, error) {
+	return tube.bumpDelayedEntries(AerospikeAdminScanSize)
 }
 
 func registerUDFs(client *as.Client) error {
