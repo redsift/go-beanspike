@@ -65,6 +65,58 @@ The alternative `Dial(id string, host string, port int)` requires everything to 
 	BenchmarkReserve	     200	  14759261 ns/op
 	BenchmarkRelease	    3000	    607290 ns/op
 	
+	
+### Benchmarks of version 728fb18f taken on MacBook Pro (Retina, 15-inch, Mid 2015) C02S218TG8WL
+
+```sh
+% go test -bench=. -v
+=== RUN   TestConnection
+--- PASS: TestConnection (0.12s)
+=== RUN   TestPut
+--- PASS: TestPut (6.47s)
+=== RUN   TestReserve
+--- PASS: TestReserve (6.47s)
+=== RUN   TestReserveBatched
+--- PASS: TestReserveBatched (6.47s)
+=== RUN   TestReserveBatchedDelayed
+--- SKIP: TestReserveBatchedDelayed (0.00s)
+=== RUN   TestReserveBatched1
+--- PASS: TestReserveBatched1 (6.46s)
+=== RUN   TestReserveBatchedNoMetadata
+--- PASS: TestReserveBatchedNoMetadata (6.48s)
+=== RUN   TestReserveCompressedRnd
+--- PASS: TestReserveCompressedRnd (6.46s)
+=== RUN   TestReserveCompressedStr
+--- PASS: TestReserveCompressedStr (6.48s)
+=== RUN   TestPutTtr
+--- PASS: TestPutTtr (10.49s)
+=== RUN   TestPutTouch
+--- PASS: TestPutTouch (8.47s)
+=== RUN   TestRelease
+--- PASS: TestRelease (7.47s)
+=== RUN   TestDelete
+--- PASS: TestDelete (3.29s)
+=== RUN   TestStats
+--- PASS: TestStats (8.68s)
+        beanspike_test.go:547: Stats returned, &{Jobs:40 Ready:39 Buried:0 Delayed:0 Reserved:1 Deleted:0 JobSize:60160 UsedSize:600 SkippedSize:0}
+=== RUN   TestShouldOperate
+--- PASS: TestShouldOperate (11.81s)
+=== RUN   TestBumpDelayed
+--- PASS: TestBumpDelayed (18.47s)
+=== RUN   TestRetries
+--- PASS: TestRetries (6.46s)
+=== RUN   TestRetriesWithoutIncrement
+--- PASS: TestRetriesWithoutIncrement (22.53s)
+goos: darwin
+goarch: amd64
+pkg: github.com/redsift/go-beanspike
+BenchmarkPut-8              2000            849611 ns/op
+BenchmarkReserve-8           300           3628816 ns/op
+BenchmarkRelease-8          2000            767221 ns/op
+PASS
+ok      github.com/redsift/go-beanspike 208.153s
+```
+
 ## TODO
 
 - Fix TTL related implementations. 

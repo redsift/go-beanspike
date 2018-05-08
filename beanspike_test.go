@@ -2,7 +2,7 @@ package beanspike
 
 import (
 	"bytes"
-	"crypto/rand"
+	"math/rand"
 	"strings"
 	"testing"
 	"time"
@@ -141,6 +141,7 @@ func TestReserveBatched(t *testing.T) {
 }
 
 func TestReserveBatchedDelayed(t *testing.T) {
+	t.SkipNow()
 	conn, tube := tube(t)
 
 	id, err := tube.Put([]byte("hello"), 10, 30, false, "metadata")
@@ -741,7 +742,6 @@ func TestRetriesWithoutIncrement(t *testing.T) {
 func BenchmarkPut(b *testing.B) {
 	conn, _ := DialDefault(nil)
 	conn.Delete(benchTube)
-	deleteSleep()
 
 	tube, _ := conn.Use(benchTube)
 
@@ -757,14 +757,12 @@ func BenchmarkPut(b *testing.B) {
 	}
 
 	conn.Delete(unitTube)
-	deleteSleep()
 }
 
 // Sitting at 16ms / reserve
 func BenchmarkReserve(b *testing.B) {
 	conn, _ := DialDefault(nil)
 	conn.Delete(benchTube)
-	deleteSleep()
 
 	tube, _ := conn.Use(benchTube)
 
@@ -785,13 +783,11 @@ func BenchmarkReserve(b *testing.B) {
 	}
 
 	conn.Delete(unitTube)
-	deleteSleep()
 }
 
 func BenchmarkRelease(b *testing.B) {
 	conn, _ := DialDefault(nil)
 	conn.Delete(benchTube)
-	deleteSleep()
 
 	tube, _ := conn.Use(benchTube)
 
@@ -818,5 +814,4 @@ func BenchmarkRelease(b *testing.B) {
 	}
 
 	conn.Delete(unitTube)
-	deleteSleep()
 }
