@@ -738,25 +738,55 @@ func TestRetriesWithoutIncrement(t *testing.T) {
 	deleteSleep()
 }
 
-// Sitting at 600us / put
-func BenchmarkPut(b *testing.B) {
+func randBytes(n int) []byte {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var b bytes.Buffer
+	for i := 0; i < n; i++ {
+		b.WriteByte(byte(r.Intn(256)))
+	}
+	return b.Bytes()
+}
+
+func benchmarkPutN(b *testing.B, n int) {
 	conn, _ := DialDefault(nil)
 	conn.Delete(benchTube)
 
 	tube, _ := conn.Use(benchTube)
 
-	val := []byte("hello")
+	val := randBytes(n)
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		_, err := tube.Put(val, 0, 0, false, "metadata")
+		b.SetBytes(int64(len(val)))
 		if err != nil {
 			b.Fatalf("Error putting Job. %v", err)
 		}
-
 	}
+	b.ReportAllocs()
 
 	conn.Delete(unitTube)
+}
+
+// Sitting at 600us / put
+func BenchmarkPut_5b(b *testing.B) {
+	benchmarkPutN(b, 5)
+}
+
+func BenchmarkPut_1K(b *testing.B) {
+	benchmarkPutN(b, 1<<10)
+}
+
+func BenchmarkPut_10K(b *testing.B) {
+	benchmarkPutN(b, 10<<10)
+}
+
+func BenchmarkPut_100K(b *testing.B) {
+	benchmarkPutN(b, 100<<10)
+}
+
+func BenchmarkPut_500K(b *testing.B) {
+	benchmarkPutN(b, 500<<10)
 }
 
 // Sitting at 16ms / reserve
