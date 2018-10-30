@@ -79,7 +79,7 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 
 	// time of birth
 	if tob == 0 {
-		tob = time.Now().UnixNano()
+		tob = time.Now().UTC().UnixNano()
 	}
 	bins = append(bins, as.NewBin(AerospikeNameToB, tob))
 

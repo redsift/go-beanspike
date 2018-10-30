@@ -116,7 +116,7 @@ func TestTimeOfBirth(t *testing.T) {
 
 	const tobTest = 100
 	payload := []byte("hello")
-	tobNow := time.Now().UnixNano()
+	tobNow := time.Now().UTC().UnixNano()
 	id, err := tube.Put(payload, 0, 0, false, "metadata", 0)
 	if err != nil {
 		t.Fatal(err)
