@@ -19,7 +19,7 @@ var (
 )
 
 func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bool,
-	metadata string) (id int64, err error) {
+	metadata string, tob int64) (id int64, err error) {
 	id, err = tube.Conn.newJobID()
 	if err != nil {
 		return
@@ -76,6 +76,12 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 	if ttr != 0 {
 		bins = append(bins, as.NewBin(AerospikeNameTtr, int64(ttr.Seconds())))
 	}
+
+	// time of birth
+	if tob == 0 {
+		tob = time.Now().UnixNano()
+	}
+	bins = append(bins, as.NewBin(AerospikeNameToB, tob))
 
 	if len(metadata) > 0 {
 		bins = append(bins, as.NewBin(AerospikeNameMetadata, metadata))
@@ -401,8 +407,8 @@ func (tube *Tube) KickJob(id int64) error {
 	return client.PutBins(writePolicy, record.Key, binStatus, binReason, binDelay, binBuriedMeta, binMeta)
 }
 
-func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, retryFlag bool,
-	metadata string, err error) {
+func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, retryFlag bool, tob int64,
+	err error) {
 	client := tube.Conn.aerospike
 
 	if tube.first {
@@ -414,7 +420,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 	for i := 0; i < 2; i++ {
 		stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
 			AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries,
-			AerospikeNameRetryFlag, AerospikeNameMetadata)
+			AerospikeNameRetryFlag, AerospikeNameToB)
 		stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
 
 		policy := as.NewQueryPolicy()
@@ -424,7 +430,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 		recordset, err = client.Query(policy, stm)
 
 		if err != nil {
-			return 0, nil, 0, 0, false, "", err
+			return 0, nil, 0, 0, false, 0, err
 		}
 
 		defer func(rs *as.Recordset) {
@@ -456,7 +462,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 						reserve = AerospikeSymReservedTtr
 						binTtrExp, err = tube.timeJob(job, ttr)
 						if err != nil {
-							return 0, nil, 0, 0, false, "", err
+							return 0, nil, 0, 0, false, 0, err
 						}
 					}
 
@@ -478,10 +484,11 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 									// was compressed
 									body, err = decompress(body, ozValue.(int))
 									if err != nil {
-										return 0, nil, 0, 0, false, "", err
+										return 0, nil, 0, 0, false, 0,
+											err
 									}
 								} else {
-									return 0, nil, 0, 0, false, "",
+									return 0, nil, 0, 0, false, 0,
 										errors.New("Could not establish original size of compressed content")
 								}
 							}
@@ -491,13 +498,13 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 							tube.Conn.stats("tube.reserve.count", tube.Name, float64(1))
 						}
 
-						metadata := ""
-						if m, ok := res.Record.Bins[AerospikeNameMetadata].(string); ok {
-							metadata = m
+						var tob int64
+						if tobValue := res.Record.Bins[AerospikeNameToB]; tobValue != nil {
+							tob = int64(tobValue.(int))
 						}
 
 						// success, we have this job
-						return job, body, ttr, retries, retryFlag, metadata, nil
+						return job, body, ttr, retries, retryFlag, tob, nil
 					}
 					// else something happened to this job in the way
 					// TODO: Handle println
@@ -529,164 +536,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 	if err == nil {
 		err = ErrJobNotFound
 	}
-	return 0, nil, 0, 0, false, "", err
-}
-
-func (tube *Tube) ReserveBatch(batchSize int) (jobs []*Job, err error) {
-	id, body, ttr, retries, retryFlag, metadata, err := tube.Reserve()
-	if err != nil {
-		return nil, err
-	}
-
-	if id == 0 {
-		return nil, nil
-	}
-
-	jobs = append(jobs, &Job{
-		ID:        id,
-		Body:      body,
-		TTR:       ttr,
-		Retries:   retries,
-		RetryFlag: retryFlag,
-		Tube:      tube,
-	})
-
-	if len(metadata) == 0 {
-		return jobs, nil
-	}
-
-	client := tube.Conn.aerospike
-
-	for i := 0; i < 2; i++ {
-		if len(jobs) >= batchSize {
-			return jobs, nil
-		}
-
-		stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
-			AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries,
-			AerospikeNameRetryFlag)
-		stm.Addfilter(as.NewEqualFilter(AerospikeNameMetadata, metadata))
-
-		policy := as.NewQueryPolicy()
-		policy.RecordQueueSize = batchSize
-
-		var recordset *as.Recordset
-		recordset, err = client.Query(policy, stm)
-
-		if err != nil {
-			return jobs, nil
-		}
-
-		defer func(rs *as.Recordset) {
-			rs.Close()
-		}(recordset)
-		for res := range recordset.Results() {
-			if res.Err != nil {
-				if err == nil {
-					err = res.Err
-				}
-			} else {
-				if st, ok := res.Record.Bins[AerospikeNameStatus].(string); ok {
-					if st != AerospikeSymReady {
-						continue
-					}
-				} else {
-					continue
-				}
-
-				var body []byte
-				bodyVal := res.Record.Bins[AerospikeNameBody]
-				if bodyVal != nil {
-					body = bodyVal.([]byte)
-				}
-				ttr = 0
-				retries = 0
-				retryFlag = false
-
-				if key := res.Record.Key.Value(); key != nil && key.GetType() == pt.INTEGER &&
-					body != nil {
-					job := res.Record.Key.Value().GetObject().(int64)
-
-					var binTtrExp *as.Bin
-					reserve := AerospikeSymReserved
-					if ttrValue := res.Record.Bins[AerospikeNameTtr]; ttrValue != nil {
-						ttr = time.Duration(ttrValue.(int)) * time.Second
-						reserve = AerospikeSymReservedTtr
-						binTtrExp, err = tube.timeJob(job, ttr)
-						if err != nil {
-							return jobs, nil
-						}
-					}
-
-					if retriesValue := res.Record.Bins[AerospikeNameRetries]; retriesValue != nil {
-						retries = retriesValue.(int)
-					}
-
-					if retryFlagValue := res.Record.Bins[AerospikeNameRetryFlag]; retryFlagValue != nil {
-						retryFlag = retryFlagValue.(int) > 0
-					}
-
-					lockErr := tube.attemptJobReservation(res.Record, reserve, binTtrExp)
-					if lockErr == nil {
-						if czValue := res.Record.Bins[AerospikeNameCompressedSize]; czValue != nil {
-							cz := czValue.(int)
-							if cz > 0 {
-
-								if ozValue := res.Record.Bins[AerospikeNameSize]; ozValue != nil {
-									// was compressed
-									body, err = decompress(body, ozValue.(int))
-									if err != nil {
-										return jobs, nil
-									}
-								} else {
-									return jobs, nil
-								}
-							}
-						}
-
-						if tube.Conn != nil {
-							tube.Conn.stats("tube.reserve.count", tube.Name, float64(1))
-						}
-
-						// success, we have this job
-						jobs = append(jobs, &Job{
-							ID:        job,
-							Body:      body,
-							TTR:       ttr,
-							Retries:   retries,
-							RetryFlag: retryFlag,
-							Tube:      tube,
-						})
-
-						if len(jobs) >= batchSize {
-							return jobs, nil
-						}
-
-						continue
-					}
-					// else something happened to this job in the way
-					// TODO: Handle println
-					fmt.Printf("!!! Job lock failed due to %v\n", lockErr)
-				} else {
-					// if the key is nil or not an int something is wrong. WritePolicy is not set
-					// correctly. Skip this record and set err if this is the only record
-					if err == nil {
-						err = errors.New("Missing appropriate entry in job tube")
-					}
-				}
-			}
-		}
-	}
-
-	if len(jobs) > 0 {
-		return jobs, nil
-	}
-
-	// Some form of error or no job fall through
-	if err == nil {
-		err = ErrJobNotFound
-	}
-	return nil, err
+	return 0, nil, 0, 0, false, 0, err
 }
 
 func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason []byte, err error) {
