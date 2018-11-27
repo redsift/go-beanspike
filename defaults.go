@@ -31,6 +31,7 @@ const (
 	AerospikeNameRetryFlag      = "retryflag"
 	AerospikeNameMetadata       = "metadata"
 	AerospikeNameBuriedMetadata = "buried_meta"
+	AerospikeNameToB            = "tob"
 
 	// For the scan policy
 	AerospikeQueryQueueSize = 4

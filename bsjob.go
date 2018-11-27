@@ -25,6 +25,7 @@ type Job struct {
 	Retries   int
 	RetryFlag bool
 	Tube      *Tube
+	ToB       int64
 }
 
 func (job *Job) RetryCount() int {
@@ -85,13 +86,13 @@ func (job *Job) Monitor() chan struct{} {
 }
 
 func Reserve(tube *Tube) (*Job, error) {
-	id, body, ttr, retries, retryFlag, _, err := tube.Reserve()
+	id, body, ttr, retries, retryFlag, tob, err := tube.Reserve()
 
 	if err != nil || id == 0 || body == nil {
 		return nil, err
 	}
 
-	return &Job{ID: id, Body: body, TTR: ttr, Retries: retries, RetryFlag: retryFlag, Tube: tube}, nil
+	return &Job{ID: id, Body: body, TTR: ttr, Retries: retries, RetryFlag: retryFlag, Tube: tube, ToB: tob}, nil
 }
 
 func DialDefaultWithRetry(statsHandler func(string, string, float64)) *Conn {

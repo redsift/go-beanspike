@@ -149,7 +149,7 @@ func (c *Client) handle(ctx context.Context, tube *Tube, job *Job, release func(
 	}
 }
 
-func (c *Client) Put(tubeID string, v interface{}, metadata string) (int64, error) {
+func (c *Client) Put(tubeID string, v interface{}, metadata string, tob int64) (int64, error) {
 	var (
 		err  error
 		tube interface{}
@@ -166,6 +166,6 @@ func (c *Client) Put(tubeID string, v interface{}, metadata string) (int64, erro
 	}
 
 	var id int64
-	id, err = tube.(*Tube).Put(b, 0, OutTubeTTR, true, metadata)
+	id, err = tube.(*Tube).Put(b, 0, OutTubeTTR, true, metadata, tob)
 	return id, err
 }
