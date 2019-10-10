@@ -9,7 +9,7 @@ import (
 
 	as "github.com/aerospike/aerospike-client-go"
 	pt "github.com/aerospike/aerospike-client-go/types/particle_type"
-	lz4 "github.com/cloudflare/golz4"
+	lz4 "github.com/jmoiron/golz4"
 )
 
 var (
