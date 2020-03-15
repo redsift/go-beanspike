@@ -1,7 +1,7 @@
 package beanspike
 
 const (
-	AerospikeHost      = "aerospike"
+	AerospikeHost      = "aerospike-exports"
 	AerospikePort      = 3000
 	AerospikeHostEnv   = "AEROSPIKE_HOST"
 	AerospikePortEnv   = "AEROSPIKE_PORT"
