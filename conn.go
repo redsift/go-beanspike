@@ -105,7 +105,7 @@ func (conn *Conn) Use(name string) (*Tube, error) {
 			}
 		}
 	}
-	tube := &Tube{Conn: conn, Name: name, first: true}
+	tube := &Tube{Conn: conn, Name: name, once: new(sync.Once)}
 
 	tubesMap.m[name] = tube
 	return tube, nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
 	"time"
 
 	as "github.com/aerospike/aerospike-client-go"
@@ -16,6 +17,9 @@ var (
 	ErrEmptyRecord        = errors.New("ASSERT: Record empty")
 	ErrNotBuriedOrDelayed = errors.New("Job is not buried or delayed")
 	ErrJobNotFound        = errors.New("Job not found")
+
+	errInvalidTubeEntry   = errors.New("missing appropriate entry in job tube")
+	errUnknownContentSize = errors.New("could not establish original size of compressed content")
 )
 
 func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bool,
@@ -407,15 +411,204 @@ func (tube *Tube) KickJob(id int64) error {
 	return client.PutBins(writePolicy, record.Key, binStatus, binReason, binDelay, binBuriedMeta, binMeta)
 }
 
-func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, retryFlag bool, tob int64,
-	err error) {
+func (tube *Tube) init() {
+	_, _ = tube.bumpReservedEntries(AerospikeAdminScanSize)
+}
+
+func (tube *Tube) reserveJob(record *as.Record) (*Job, error) {
+	// Aerospike code panics, as in no nil check found, on an attempt of writing nil key, so I don't expect nil key on read
+	if record.Key.Value().GetType() != pt.INTEGER {
+		return nil, errInvalidTubeEntry
+	}
+
+	jobID := record.Key.Value().GetObject().(int64)
+
+	var body []byte
+	if v := record.Bins[AerospikeNameBody]; v == nil {
+		return nil, errInvalidTubeEntry
+	} else {
+		body = v.([]byte)
+	}
+
+	var retries int
+	if v := record.Bins[AerospikeNameRetries]; v != nil {
+		retries = v.(int)
+	}
+
+	var retryFlag bool
+	if v := record.Bins[AerospikeNameRetryFlag]; v != nil {
+		retryFlag = v.(int) > 0
+	}
+
+	var tob int64
+	if v, ok := record.Bins[AerospikeNameToB].(int); ok {
+		tob = int64(v) // TODO Legacy?? Why not cast to int64 at first place?
+	}
+
+	var (
+		ttr       time.Duration
+		reserve   string
+		binTtrExp *as.Bin
+		err       error
+	)
+
+	if v := record.Bins[AerospikeNameTtr]; v != nil {
+		ttr = time.Duration(v.(int)) * time.Second
+		reserve = AerospikeSymReservedTtr
+		if binTtrExp, err = tube.timeJob(jobID, ttr); err != nil {
+			return nil, err
+		}
+	} else {
+		reserve = AerospikeSymReserved
+	}
+
+	if err = tube.attemptJobReservation(record, reserve, binTtrExp); err != nil {
+		return nil, err
+	}
+
+	if cz, ok := record.Bins[AerospikeNameCompressedSize].(int); ok && cz > 0 {
+		if oz, ok := record.Bins[AerospikeNameSize].(int); ok {
+			// was compressed
+			if body, err = decompress(body, oz); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, errUnknownContentSize
+		}
+	}
+
+	// success, we have this job
+	return &Job{
+		ID:        jobID,
+		Body:      body,
+		TTR:       ttr,
+		Retries:   retries,
+		RetryFlag: retryFlag,
+		Tube:      tube,
+		ToB:       tob,
+	}, nil
+}
+
+// Consumer defines job handler interface for the app
+type Consumer interface {
+	// Consume consumes either job
+	Consume(*Job)
+}
+
+// The ConsumerFunc type is an adapter to allow the use of ordinary functions as job handler.
+// If f is a function with the appropriate signature, ConsumerFunc(f) is a Consumer that calls f.
+type ConsumerFunc func(*Job)
+
+// Consume calls f(job, err)
+func (f ConsumerFunc) Consume(job *Job) { f(job) }
+
+// ErrorLogger defines error logging interface app can implement to catch errors
+type ErrorLogger interface {
+	LogError(error)
+}
+
+// The ErrorLoggerFunc type is an adapter to allow the use of ordinary functions as error logger.
+// If f is a function with the appropriate signature, ErrorLoggerFunc(f) is a ErrorLogger that calls f.
+type ErrorLoggerFunc func(error)
+
+// LogError calls f(err)
+func (f ErrorLoggerFunc) LogError(err error) { f(err) }
+
+func (tube *Tube) reserveBatch(max int, c Consumer, log ErrorLogger) (int, error) {
 	client := tube.Conn.aerospike
 
-	if tube.first {
-		tube.first = false
+	stm := as.NewStatement(AerospikeNamespace, tube.Name,
+		AerospikeNameBody, AerospikeNameTtr, AerospikeNameCompressedSize,
+		AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries,
+		AerospikeNameRetryFlag, AerospikeNameToB)
 
-		_, _ = tube.bumpReservedEntries(AerospikeAdminScanSize)
+	_ = stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
+
+	policy := as.NewQueryPolicy()
+	//policy.RecordQueueSize = AerospikeQueryQueueSize
+	//policy.RecordQueueSize = max
+
+	rs, err := client.Query(policy, stm)
+
+	if err != nil {
+		return 0, err
 	}
+
+	defer func(rs *as.Recordset) {
+		_ = rs.Close()
+	}(rs)
+
+	var (
+		wg sync.WaitGroup
+		n  int
+	)
+
+	for result := range rs.Results() {
+		if result.Err != nil {
+			log.LogError(fmt.Errorf("query error: %w", result.Err))
+			continue
+		}
+
+		if n == max {
+			break
+		}
+
+		n++
+
+		wg.Add(1)
+		go func(r *as.Record) {
+			defer wg.Done()
+			if job, err := tube.reserveJob(r); err != nil {
+				log.LogError(fmt.Errorf("reserving job error: %w", err))
+			} else {
+				c.Consume(job)
+
+				if tube.Conn != nil {
+					tube.Conn.stats("tube.reserve.count", tube.Name, 1.0)
+				}
+			}
+		}(result.Record)
+	}
+
+	wg.Wait()
+
+	return n, nil
+}
+
+// TODO consider replacing this variable with "Options" pattern.
+var DefaultErrorLogger = ErrorLoggerFunc(func(err error) {})
+
+// ReserveBatch tries to reserve at most max jobs.
+// ReserveBatch returns number of reserved jobs.
+// ReserveBatch calls Consumer.Consume for each attempt to reserve a job and blocks execution until all calls finished.
+// ReserveBatch logs any errors with DefaultErrorLogger
+func (tube *Tube) ReserveBatch(max int, c Consumer) (reserved int) {
+	tube.once.Do(tube.init)
+
+	for count := -1; count != 0 && reserved <= max; {
+		if n, err := tube.reserveBatch(max-reserved, c, DefaultErrorLogger); err != nil {
+			DefaultErrorLogger.LogError(err)
+		} else {
+			reserved += n
+		}
+
+		if count, _ = tube.bumpReservedEntries(AerospikeAdminScanSize); count == 0 {
+			// no jobs to return, use the cycles to admin the set
+			count, _ = tube.bumpDelayedEntries(AerospikeAdminScanSize)
+		}
+	}
+
+	_, _ = tube.deleteZombieEntries(AerospikeAdminScanSize)
+
+	return reserved
+}
+
+func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, retryFlag bool, tob int64,
+	err error) {
+
+	tube.once.Do(tube.init)
+
+	client := tube.Conn.aerospike
 
 	for i := 0; i < 2; i++ {
 		stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,

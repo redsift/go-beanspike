@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"sync/atomic"
 
 	as "github.com/aerospike/aerospike-client-go"
@@ -22,9 +23,9 @@ func (conn *Conn) stats(event, tube string, count float64) {
 }
 
 type Tube struct {
-	Conn  *Conn
-	Name  string
-	first bool
+	Conn *Conn
+	Name string
+	once *sync.Once
 }
 
 type Stats struct {
