@@ -64,7 +64,11 @@ func Dial(id string, host string, port int, statsHandler func(string, string, fl
 		// generate a default Id
 		id = genID()
 	}
-	client, err := as.NewClient(host, port)
+
+	policy := as.NewClientPolicy()
+	policy.LimitConnectionsToQueueSize = true
+
+	client, err := as.NewClientWithPolicy(policy, host, port)
 
 	if err != nil {
 		return nil, err

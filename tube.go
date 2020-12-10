@@ -1,6 +1,7 @@
 package beanspike
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -17,10 +18,15 @@ var (
 	ErrEmptyRecord        = errors.New("ASSERT: Record empty")
 	ErrNotBuriedOrDelayed = errors.New("Job is not buried or delayed")
 	ErrJobNotFound        = errors.New("Job not found")
+	ErrDecodingError      = errors.New("decoding error")
 
 	errInvalidTubeEntry   = errors.New("missing appropriate entry in job tube")
 	errUnknownContentSize = errors.New("could not establish original size of compressed content")
 )
+
+func (tube *Tube) releaseAbandoned() {
+	_, _ = tube.bumpReservedEntries(AerospikeAdminScanSize)
+}
 
 func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bool,
 	metadata string, tob int64) (id int64, err error) {
@@ -300,7 +306,7 @@ func (tube *Tube) ReleaseWithRetry(id int64, delay time.Duration, incr, retryFla
 		bins = append(bins, as.NewBin(AerospikeNameRetries, retries))
 	}
 
-	// Set retryflag
+	// Set retryFlag
 	{
 		retryFlagValue := 0
 		if retryFlag {
@@ -411,202 +417,10 @@ func (tube *Tube) KickJob(id int64) error {
 	return client.PutBins(writePolicy, record.Key, binStatus, binReason, binDelay, binBuriedMeta, binMeta)
 }
 
-func (tube *Tube) init() {
-	_, _ = tube.bumpReservedEntries(AerospikeAdminScanSize)
-}
-
-func (tube *Tube) reserveJob(record *as.Record) (*Job, error) {
-	// Aerospike code panics, as in no nil check found, on an attempt of writing nil key, so I don't expect nil key on read
-	if record.Key.Value().GetType() != pt.INTEGER {
-		return nil, errInvalidTubeEntry
-	}
-
-	jobID := record.Key.Value().GetObject().(int64)
-
-	var body []byte
-	if v := record.Bins[AerospikeNameBody]; v == nil {
-		return nil, errInvalidTubeEntry
-	} else {
-		body = v.([]byte)
-	}
-
-	var retries int
-	if v := record.Bins[AerospikeNameRetries]; v != nil {
-		retries = v.(int)
-	}
-
-	var retryFlag bool
-	if v := record.Bins[AerospikeNameRetryFlag]; v != nil {
-		retryFlag = v.(int) > 0
-	}
-
-	var tob int64
-	if v, ok := record.Bins[AerospikeNameToB].(int); ok {
-		tob = int64(v) // TODO Legacy?? Why not cast to int64 at first place?
-	}
-
-	var (
-		ttr       time.Duration
-		reserve   string
-		binTtrExp *as.Bin
-		err       error
-	)
-
-	if v := record.Bins[AerospikeNameTtr]; v != nil {
-		ttr = time.Duration(v.(int)) * time.Second
-		reserve = AerospikeSymReservedTtr
-		if binTtrExp, err = tube.timeJob(jobID, ttr); err != nil {
-			return nil, err
-		}
-	} else {
-		reserve = AerospikeSymReserved
-	}
-
-	if err = tube.attemptJobReservation(record, reserve, binTtrExp); err != nil {
-		return nil, err
-	}
-
-	if cz, ok := record.Bins[AerospikeNameCompressedSize].(int); ok && cz > 0 {
-		if oz, ok := record.Bins[AerospikeNameSize].(int); ok {
-			// was compressed
-			if body, err = decompress(body, oz); err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, errUnknownContentSize
-		}
-	}
-
-	// success, we have this job
-	return &Job{
-		ID:        jobID,
-		Body:      body,
-		TTR:       ttr,
-		Retries:   retries,
-		RetryFlag: retryFlag,
-		Tube:      tube,
-		ToB:       tob,
-	}, nil
-}
-
-// Consumer defines job handler interface for the app
-type Consumer interface {
-	// Consume consumes either job
-	Consume(*Job)
-}
-
-// The ConsumerFunc type is an adapter to allow the use of ordinary functions as job handler.
-// If f is a function with the appropriate signature, ConsumerFunc(f) is a Consumer that calls f.
-type ConsumerFunc func(*Job)
-
-// Consume calls f(job, err)
-func (f ConsumerFunc) Consume(job *Job) { f(job) }
-
-// ErrorLogger defines error logging interface app can implement to catch errors
-type ErrorLogger interface {
-	LogError(error)
-}
-
-// The ErrorLoggerFunc type is an adapter to allow the use of ordinary functions as error logger.
-// If f is a function with the appropriate signature, ErrorLoggerFunc(f) is a ErrorLogger that calls f.
-type ErrorLoggerFunc func(error)
-
-// LogError calls f(err)
-func (f ErrorLoggerFunc) LogError(err error) { f(err) }
-
-func (tube *Tube) reserveBatch(max int, c Consumer, log ErrorLogger) (int, error) {
-	client := tube.Conn.aerospike
-
-	stm := as.NewStatement(AerospikeNamespace, tube.Name,
-		AerospikeNameBody, AerospikeNameTtr, AerospikeNameCompressedSize,
-		AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries,
-		AerospikeNameRetryFlag, AerospikeNameToB)
-
-	_ = stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
-
-	policy := as.NewQueryPolicy()
-	//policy.RecordQueueSize = AerospikeQueryQueueSize
-	//policy.RecordQueueSize = max
-
-	rs, err := client.Query(policy, stm)
-
-	if err != nil {
-		return 0, err
-	}
-
-	defer func(rs *as.Recordset) {
-		_ = rs.Close()
-	}(rs)
-
-	var (
-		wg sync.WaitGroup
-		n  int
-	)
-
-	for result := range rs.Results() {
-		if result.Err != nil {
-			log.LogError(fmt.Errorf("query error: %w", result.Err))
-			continue
-		}
-
-		if n == max {
-			break
-		}
-
-		n++
-
-		wg.Add(1)
-		go func(r *as.Record) {
-			defer wg.Done()
-			if job, err := tube.reserveJob(r); err != nil {
-				log.LogError(fmt.Errorf("reserving job error: %w", err))
-			} else {
-				c.Consume(job)
-
-				if tube.Conn != nil {
-					tube.Conn.stats("tube.reserve.count", tube.Name, 1.0)
-				}
-			}
-		}(result.Record)
-	}
-
-	wg.Wait()
-
-	return n, nil
-}
-
-// TODO consider replacing this variable with "Options" pattern.
-var DefaultErrorLogger = ErrorLoggerFunc(func(err error) {})
-
-// ReserveBatch tries to reserve at most max jobs.
-// ReserveBatch returns number of reserved jobs.
-// ReserveBatch calls Consumer.Consume for each attempt to reserve a job and blocks execution until all calls finished.
-// ReserveBatch logs any errors with DefaultErrorLogger
-func (tube *Tube) ReserveBatch(max int, c Consumer) (reserved int) {
-	tube.once.Do(tube.init)
-
-	for count := -1; count != 0 && reserved <= max; {
-		if n, err := tube.reserveBatch(max-reserved, c, DefaultErrorLogger); err != nil {
-			DefaultErrorLogger.LogError(err)
-		} else {
-			reserved += n
-		}
-
-		if count, _ = tube.bumpReservedEntries(AerospikeAdminScanSize); count == 0 {
-			// no jobs to return, use the cycles to admin the set
-			count, _ = tube.bumpDelayedEntries(AerospikeAdminScanSize)
-		}
-	}
-
-	_, _ = tube.deleteZombieEntries(AerospikeAdminScanSize)
-
-	return reserved
-}
-
 func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, retryFlag bool, tob int64,
 	err error) {
 
-	tube.once.Do(tube.init)
+	tube.once.Do(tube.releaseAbandoned)
 
 	client := tube.Conn.aerospike
 
@@ -1168,4 +982,191 @@ func compress(body []byte) ([]byte, error) {
 		return nil, errors.New("Failed to produce compressed output")
 	}
 	return cbody[:sz], nil
+}
+
+func (tube *Tube) reserveJob(record *as.Record, dec JobDecoder) (*Job, interface{}, error) {
+	// Aerospike code panics, as in no nil check found, on an attempt of writing nil key, so I don't expect nil key on read
+	if record.Key.Value().GetType() != pt.INTEGER {
+		return nil, nil, errInvalidTubeEntry
+	}
+
+	jobID := record.Key.Value().GetObject().(int64)
+
+	var body []byte
+	if v := record.Bins[AerospikeNameBody]; v == nil {
+		return nil, nil, errInvalidTubeEntry
+	} else {
+		body = v.([]byte)
+	}
+
+	var (
+		err     error
+		payload interface{}
+	)
+
+	if cz, ok := record.Bins[AerospikeNameCompressedSize].(int); ok && cz > 0 {
+		if oz, ok := record.Bins[AerospikeNameSize].(int); ok {
+			// was compressed
+			if body, err = decompress(body, oz); err != nil {
+				return nil, nil, err
+			}
+		} else {
+			return nil, nil, errUnknownContentSize
+		}
+	}
+
+	if payload, err = dec.Decode(body); err != nil {
+		reason := err.Error()
+		if err := tube.Bury(jobID, []byte(reason)); err != nil {
+			DefaultErrorLogger.LogError(fmt.Errorf("failed to bury the job after decoding error: %w", err))
+		}
+		return nil, nil, fmt.Errorf("%w: %s", ErrDecodingError, reason)
+	}
+
+	var retries int
+	if v := record.Bins[AerospikeNameRetries]; v != nil {
+		retries = v.(int)
+	}
+
+	var retryFlag bool
+	if v := record.Bins[AerospikeNameRetryFlag]; v != nil {
+		retryFlag = v.(int) > 0
+	}
+
+	var tob int64
+	if v, ok := record.Bins[AerospikeNameToB].(int); ok {
+		tob = int64(v) // Aerospike does not work well with anything than int
+	}
+
+	var (
+		ttr       time.Duration
+		reserve   string
+		binTtrExp *as.Bin
+	)
+
+	if v := record.Bins[AerospikeNameTtr]; v != nil {
+		ttr = time.Duration(v.(int)) * time.Second
+		reserve = AerospikeSymReservedTtr
+		if binTtrExp, err = tube.timeJob(jobID, ttr); err != nil {
+			return nil, nil, fmt.Errorf("tube.timeJob(%d,%d) error: %w", jobID, ttr, err)
+		}
+	} else {
+		reserve = AerospikeSymReserved
+	}
+
+	if err = tube.attemptJobReservation(record, reserve, binTtrExp); err != nil {
+		return nil, nil, err
+	}
+
+	// success, we have this job
+	return &Job{
+		ID:        jobID,
+		Body:      body,
+		TTR:       ttr,
+		Retries:   retries,
+		RetryFlag: retryFlag,
+		Tube:      tube,
+		ToB:       tob,
+	}, payload, nil
+}
+
+func (tube *Tube) reserveBatch(ctx context.Context, dec JobDecoder, h JobHandler, log ErrorLogger, batchSize int) (int, error) {
+	client := tube.Conn.aerospike
+
+	stm := as.NewStatement(AerospikeNamespace, tube.Name,
+		AerospikeNameBody, AerospikeNameTtr, AerospikeNameCompressedSize,
+		AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries,
+		AerospikeNameRetryFlag, AerospikeNameToB)
+
+	_ = stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
+
+	policy := as.NewQueryPolicy()
+	//policy.RecordQueueSize = AerospikeQueryQueueSize
+	//policy.RecordQueueSize = max
+
+	rs, err := client.Query(policy, stm)
+
+	if err != nil {
+		return 0, err
+	}
+
+	defer func(rs *as.Recordset) {
+		_ = rs.Close()
+	}(rs)
+
+	var (
+		wg sync.WaitGroup
+		n  int
+	)
+
+	noop := func() {}
+
+	for result := range rs.Results() {
+		if err := ctx.Err(); err != nil {
+			break
+		}
+
+		if result.Err != nil {
+			log.LogError(fmt.Errorf("query error: %w", result.Err))
+			continue
+		}
+
+		if n == batchSize {
+			break
+		}
+
+		n++
+
+		wg.Add(1)
+		go func(r *as.Record) {
+			defer wg.Done()
+			if job, payload, err := tube.reserveJob(r, dec); err != nil {
+				log.LogError(fmt.Errorf("reserving job error: %w", err))
+			} else if ctx.Err() == nil {
+				h.Handle(ctx, NewManagedJob(job, noop), payload)
+
+				if tube.Conn != nil {
+					tube.Conn.stats("tube.reserve.count", tube.Name, 1.0)
+				}
+			}
+		}(result.Record)
+	}
+
+	wg.Wait()
+
+	return n, nil
+}
+
+// ReserveBatch reserves at most max jobs and returns number of reserved jobs.
+// ReserveBatch uses JobDecoder for unmarshalling a job payload and pass it to the given JobHandler.
+// Any errors are being logged with DefaultErrorLogger.
+func (tube *Tube) ReserveBatch(ctx context.Context, dec JobDecoder, h JobHandler, batchSize int) (reserved int) {
+	tube.once.Do(tube.releaseAbandoned)
+
+	for count := -1; ctx.Err() == nil && count != 0 && reserved <= batchSize; {
+		if n, err := tube.reserveBatch(ctx, dec, h, DefaultErrorLogger, batchSize-reserved); err != nil {
+			DefaultErrorLogger.LogError(err)
+		} else {
+			reserved += n
+		}
+
+		var err error
+
+		count, err = tube.bumpReservedEntries(AerospikeAdminScanSize)
+		if err != nil {
+			DefaultErrorLogger.LogError(fmt.Errorf("bumpReservedEntries() error: %w", err))
+		}
+
+		if count == 0 {
+			// no jobs to return, use the cycles to admin the set
+			count, err = tube.bumpDelayedEntries(AerospikeAdminScanSize)
+			if err != nil {
+				DefaultErrorLogger.LogError(fmt.Errorf("bumpDelayedEntries() error: %w", err))
+			}
+		}
+	}
+
+	_, _ = tube.deleteZombieEntries(AerospikeAdminScanSize)
+
+	return reserved
 }
