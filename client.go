@@ -43,11 +43,6 @@ type JobDecoderFunc func([]byte) (interface{}, error)
 
 func (f JobDecoderFunc) Decode(b []byte) (interface{}, error) { return f(b) }
 
-type JobEventListener interface {
-	// OnRelease will be called when handler context canceled
-	OnRelease(*Job, interface{})
-}
-
 type JobHandler interface {
 	// Handle processes an incoming job.
 	// Application should watch given context; it is being canceled on job release.
@@ -59,7 +54,7 @@ type JobHandlerFunc func(context.Context, *ManagedJob, interface{})
 func (f JobHandlerFunc) Handle(ctx context.Context, job *ManagedJob, v interface{}) { f(ctx, job, v) }
 
 type ManagedJob struct {
-	Job
+	*Job
 	cancel func()
 }
 
@@ -68,7 +63,7 @@ func (job *ManagedJob) StopAndRelease() { job.cancel() }
 
 func NewManagedJob(job *Job, cancel func()) *ManagedJob {
 	return &ManagedJob{
-		Job:    *job,
+		Job:    job,
 		cancel: cancel,
 	}
 }
@@ -180,7 +175,7 @@ func (c *Client) Close() {
 	wg.Wait()
 
 	// TODO close connection
-	// TODO stop workerpool when queue is empty
+	// TODO stop worker pool when queue is empty
 }
 
 func (c *Client) StartReserveAndKeepLoop(id TubeID, dec JobDecoder, handler JobHandler, batchSize int) error {
@@ -193,7 +188,7 @@ func (c *Client) StartReserveAndKeepLoop(id TubeID, dec JobDecoder, handler JobH
 		ctx, cancel := context.WithCancel(ctx)
 
 		// wrap job into ManagedJob with a new cancel func
-		managedJob := NewManagedJob(&job.Job, func() {
+		managedJob := NewManagedJob(job.Job, func() {
 			cancel() // notify application
 
 			// remove from reserved jobs
