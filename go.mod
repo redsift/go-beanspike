@@ -8,5 +8,6 @@ require (
 	github.com/jmoiron/golz4 v0.0.0-20160608053201-27f83594ae3e
 	github.com/onsi/ginkgo v1.10.2 // indirect
 	github.com/onsi/gomega v1.7.0 // indirect
+	github.com/redsift/clockwork v1.5.0
 	github.com/yuin/gopher-lua v0.0.0-20171229012508-478861c8ce6e // indirect
 )

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"sync/atomic"
 
 	as "github.com/aerospike/aerospike-client-go"
@@ -22,9 +23,9 @@ func (conn *Conn) stats(event, tube string, count float64) {
 }
 
 type Tube struct {
-	Conn  *Conn
-	Name  string
-	first bool
+	Conn *Conn
+	Name string
+	once *sync.Once
 }
 
 type Stats struct {
@@ -63,7 +64,11 @@ func Dial(id string, host string, port int, statsHandler func(string, string, fl
 		// generate a default Id
 		id = genID()
 	}
-	client, err := as.NewClient(host, port)
+
+	policy := as.NewClientPolicy()
+	policy.LimitConnectionsToQueueSize = true
+
+	client, err := as.NewClientWithPolicy(policy, host, port)
 
 	if err != nil {
 		return nil, err
