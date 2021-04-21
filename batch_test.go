@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -104,13 +105,17 @@ func ExampleClient_StartReserveAndKeepLoop() {
 
 	reserved := make(chan struct{}, 1)
 
+	var numReserved, numReleased int32
+
 	handler := beanspike.JobHandlerFunc(func(ctx context.Context, job *beanspike.ManagedJob, _ interface{}) {
 		go func() {
 			<-ctx.Done()
 			//log.Printf("job %d has been released", job.ID)
+			atomic.AddInt32(&numReleased,1)
 		}()
 		//log.Printf("job %d has been reserved", job.ID)
 		reserved <- struct{}{}
+		atomic.AddInt32(&numReserved,1)
 	})
 
 	if err := client.StartReserveAndKeepLoop("jmappush_google_stream_in", decoder, handler, 500); err != nil {
@@ -133,9 +138,10 @@ func ExampleClient_StartReserveAndKeepLoop() {
 				if n%200 == 0 {
 					log.Printf("reserved %d in %s", n, sinceStart())
 				}
-				if n == 4123 {
+				if n > 4000 {
 					log.Printf("all jobs reserved in %s", sinceStart())
 					close(done)
+					return
 				}
 			}
 		}
@@ -148,10 +154,14 @@ func ExampleClient_StartReserveAndKeepLoop() {
 	case <-sigs:
 		log.Printf("interrupted")
 	case <-done:
-		log.Printf("done")
+		log.Printf("done; reserved %d, released %d",
+			atomic.LoadInt32(&numReserved), atomic.LoadInt32(&numReleased))
 	}
 
 	client.Close()
+
+	log.Printf("client.Close(); reserved %d, released %d",
+		atomic.LoadInt32(&numReserved), atomic.LoadInt32(&numReleased))
 
 	log.Printf("finished in %s", sinceStart())
 
@@ -165,22 +175,23 @@ func ExampleClient_StartReserveAndKeepLoop() {
 	// reserved 1000 in 3s
 	// reserved 1200 in 3s
 	// reserved 1400 in 3s
-	// reserved 1600 in 3s
+	// reserved 1600 in 4s
 	// reserved 1800 in 4s
 	// reserved 2000 in 4s
 	// reserved 2200 in 4s
 	// reserved 2400 in 4s
 	// reserved 2600 in 4s
-	// reserved 2800 in 4s
+	// reserved 2800 in 5s
 	// reserved 3000 in 5s
 	// reserved 3200 in 5s
 	// reserved 3400 in 5s
 	// reserved 3600 in 5s
-	// reserved 3800 in 6s
-	// reserved 4000 in 6s
+	// reserved 3800 in 5s
+	// reserved 4000 in 5s
 	// all jobs reserved in 6s
-	// done
-	// finished in 8s
+	// done; reserved 4001, released 0
+	// client.Close(); reserved 4001, released 4001
+	// finished in 7s
 
 	// Output:
 	//

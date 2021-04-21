@@ -202,6 +202,8 @@ func (c *Client) StartReserveAndKeepLoop(id TubeID, dec JobDecoder, handler JobH
 			// release us usual if not shutdown; otherwise job will be released immediately
 			if atomic.LoadInt32(&c.shutdown) == 0 {
 				_ = job.ReleaseWithRetry(retryDuration(uint(job.Retries)), true, true)
+			} else {
+				_ = job.ReleaseWithRetry(0, false, false)
 			}
 
 			// call the original cancel func
