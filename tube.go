@@ -44,6 +44,7 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 	policy.RecordExistsAction = as.CREATE_ONLY
 	policy.SendKey = true
 	policy.CommitLevel = as.COMMIT_MASTER
+	policy.DurableDelete = true
 
 	client := tube.Conn.aerospike
 
@@ -141,6 +142,7 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 	policy.SendKey = true
 	policy.CommitLevel = as.COMMIT_MASTER
 	policy.GenerationPolicy = as.NONE
+	policy.DurableDelete = true
 
 	binBody := as.NewBin(AerospikeNameBody, nil)
 	binCSize := as.NewBin(AerospikeNameCompressedSize, nil)
@@ -155,7 +157,7 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 		}
 	}
 
-	ex, err := tube.Conn.aerospike.Delete(nil, key)
+	ex, err := tube.Conn.aerospike.Delete(policy, key)
 	if err != nil {
 		if tube.Conn != nil {
 			tube.Conn.stats("tube.delete.count", tube.Name, float64(1))
@@ -248,6 +250,7 @@ func (tube *Tube) Touch(id int64) error {
 
 	policy := as.NewWritePolicy(0, uint32(ttrValue.(int)))
 	policy.CommitLevel = as.COMMIT_MASTER
+	policy.DurableDelete = true
 	return client.Touch(policy, touch)
 }
 
@@ -287,13 +290,16 @@ func (tube *Tube) ReleaseWithRetry(id int64, delay time.Duration, incr, retryFla
 		key, err := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, entry)
 
 		if err == nil {
-			client.Delete(nil, key)
+			policy := as.NewWritePolicy(0, 0)
+			policy.DurableDelete = true
+			client.Delete(policy, key)
 		}
 	}
 
 	writePolicy := as.NewWritePolicy(record.Generation, 0)
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
+	writePolicy.DurableDelete = true
 
 	bins := make([]*as.Bin, 0, 6)
 	if incr {
@@ -364,6 +370,7 @@ func (tube *Tube) Bury(id int64, reason []byte) error {
 	writePolicy := as.NewWritePolicy(record.Generation, 0)
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
+	writePolicy.DurableDelete = true
 
 	binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymBuried)
 	binReason := as.NewBin(AerospikeNameReason, reason)
@@ -401,6 +408,7 @@ func (tube *Tube) KickJob(id int64) error {
 	writePolicy := as.NewWritePolicy(record.Generation, 0)
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
+	writePolicy.DurableDelete = true
 
 	binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
 
@@ -647,6 +655,7 @@ func (tube *Tube) delayJob(id int64, delay time.Duration) (*as.Bin, error) {
 	policy := as.NewWritePolicy(0, uint32(delay.Seconds()))
 	policy.RecordExistsAction = as.CREATE_ONLY
 	policy.CommitLevel = as.COMMIT_MASTER
+	policy.DurableDelete = true
 
 	delayBin := as.NewBin(AerospikeNameDelayValue, int32(delay.Seconds()))
 	err = tube.Conn.aerospike.PutBins(policy, key, delayBin)
@@ -672,6 +681,7 @@ func (tube *Tube) timeJob(id int64, ttr time.Duration) (*as.Bin, error) {
 	policy := as.NewWritePolicy(0, uint32(ttr.Seconds()))
 	policy.RecordExistsAction = as.CREATE_ONLY
 	policy.CommitLevel = as.COMMIT_MASTER
+	policy.DurableDelete = true
 
 	ttrBin := as.NewBin(AerospikeNameTtrValue, int32(ttr.Seconds()))
 	err = tube.Conn.aerospike.PutBins(policy, key, ttrBin)
@@ -688,6 +698,7 @@ func (tube *Tube) shouldOperate(scan string) bool {
 
 	policy := as.NewWritePolicy(0, AerospikeAdminDelay)
 	policy.RecordExistsAction = as.CREATE_ONLY
+	policy.DurableDelete = true
 
 	binBy := as.NewBin(AerospikeNameBy, tube.Conn.clientID)
 
@@ -765,6 +776,7 @@ func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 			update.CommitLevel = as.COMMIT_MASTER
 			update.GenerationPolicy = as.EXPECT_GEN_EQUAL
 			update.SendKey = true
+			update.DurableDelete = true
 
 			binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
 			// removing Delay may not be required
@@ -851,6 +863,7 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 			update.CommitLevel = as.COMMIT_MASTER
 			update.GenerationPolicy = as.EXPECT_GEN_EQUAL
 			update.SendKey = true
+			update.DurableDelete = true
 
 			binStatus := as.NewBin(AerospikeNameStatus, AerospikeSymReady)
 			// removing Delay may not be required
@@ -902,7 +915,9 @@ func (tube *Tube) deleteZombieEntries(n int) (int, error) {
 			tube.Delete(job)
 			count++
 		} else {
-			tube.Conn.aerospike.Delete(nil, res.Record.Key)
+			policy := as.NewWritePolicy(0, 0)
+			policy.DurableDelete = true
+			tube.Conn.aerospike.Delete(policy, res.Record.Key)
 			count++
 		}
 	}
@@ -921,6 +936,7 @@ func (tube *Tube) attemptJobReservation(record *as.Record, status string, binTtr
 	writePolicy := as.NewWritePolicy(record.Generation, 0)
 	writePolicy.GenerationPolicy = as.EXPECT_GEN_EQUAL
 	writePolicy.RecordExistsAction = as.UPDATE_ONLY
+	writePolicy.DurableDelete = true
 
 	bins := make([]*as.Bin, 0, 3)
 

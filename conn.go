@@ -148,6 +148,7 @@ func (conn *Conn) Delete(name string) error {
 		policy.SendKey = true
 		policy.CommitLevel = as.COMMIT_MASTER
 		policy.GenerationPolicy = as.EXPECT_GEN_EQUAL
+		policy.DurableDelete = true
 
 		binBody := as.NewBin(AerospikeNameBody, nil)
 		binCSize := as.NewBin(AerospikeNameCompressedSize, nil)
@@ -159,7 +160,7 @@ func (conn *Conn) Delete(name string) error {
 			return err
 		}
 
-		_, err = client.Delete(nil, key)
+		_, err = client.Delete(policy, key)
 		if err != nil {
 			return err
 		}
@@ -167,13 +168,16 @@ func (conn *Conn) Delete(name string) error {
 		conn.stats("tube.delete.count", name, float64(1))
 	}
 
+	policy := as.NewWritePolicy(0, 0)
+	policy.DurableDelete = true
+
 	tk, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, name+":"+AerospikeKeySuffixTtr)
-	client.Delete(nil, tk)
+	client.Delete(policy, tk)
 
 	dk, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, name+":"+AerospikeKeySuffixDelayed)
-	client.Delete(nil, dk)
+	client.Delete(policy, dk)
 
-	err = client.DropIndex(nil, AerospikeNamespace, name, "idx_tube_"+name+"_"+AerospikeNameStatus)
+	err = client.DropIndex(policy, AerospikeNamespace, name, "idx_tube_"+name+"_"+AerospikeNameStatus)
 
 	if err != nil {
 		return err
