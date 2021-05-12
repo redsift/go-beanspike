@@ -168,16 +168,13 @@ func (conn *Conn) Delete(name string) error {
 		conn.stats("tube.delete.count", name, float64(1))
 	}
 
-	policy := as.NewWritePolicy(0, 0)
-	policy.DurableDelete = true
-
 	tk, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, name+":"+AerospikeKeySuffixTtr)
-	client.Delete(policy, tk)
+	client.Delete(defaultPolicy, tk)
 
 	dk, _ := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, name+":"+AerospikeKeySuffixDelayed)
-	client.Delete(policy, dk)
+	client.Delete(defaultPolicy, dk)
 
-	err = client.DropIndex(policy, AerospikeNamespace, name, "idx_tube_"+name+"_"+AerospikeNameStatus)
+	err = client.DropIndex(defaultPolicy, AerospikeNamespace, name, "idx_tube_"+name+"_"+AerospikeNameStatus)
 
 	if err != nil {
 		return err

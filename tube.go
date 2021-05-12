@@ -157,7 +157,7 @@ func (tube *Tube) delete(id int64, genID uint32) (bool, error) {
 		}
 	}
 
-	ex, err := tube.Conn.aerospike.Delete(policy, key)
+	ex, err := tube.Conn.aerospike.Delete(defaultPolicy, key)
 	if err != nil {
 		if tube.Conn != nil {
 			tube.Conn.stats("tube.delete.count", tube.Name, float64(1))
@@ -290,9 +290,7 @@ func (tube *Tube) ReleaseWithRetry(id int64, delay time.Duration, incr, retryFla
 		key, err := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, entry)
 
 		if err == nil {
-			policy := as.NewWritePolicy(0, 0)
-			policy.DurableDelete = true
-			client.Delete(policy, key)
+			client.Delete(defaultPolicy, key)
 		}
 	}
 
@@ -915,9 +913,7 @@ func (tube *Tube) deleteZombieEntries(n int) (int, error) {
 			tube.Delete(job)
 			count++
 		} else {
-			policy := as.NewWritePolicy(0, 0)
-			policy.DurableDelete = true
-			tube.Conn.aerospike.Delete(policy, res.Record.Key)
+			tube.Conn.aerospike.Delete(defaultPolicy, res.Record.Key)
 			count++
 		}
 	}
