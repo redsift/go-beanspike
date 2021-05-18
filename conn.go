@@ -160,7 +160,7 @@ func (conn *Conn) Delete(name string) error {
 			return err
 		}
 
-		_, err = client.Delete(policy, key)
+		_, err = client.Delete(defaultPolicy, key)
 		if err != nil {
 			return err
 		}
