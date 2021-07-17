@@ -10,6 +10,8 @@ import (
 	as "github.com/aerospike/aerospike-client-go"
 )
 
+var defaultPolicy = &as.WritePolicy{DurableDelete: true}
+
 type Conn struct {
 	aerospike    *as.Client
 	clientID     string
