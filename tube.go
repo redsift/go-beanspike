@@ -941,7 +941,10 @@ func (tube *Tube) BumpDelayedEntries() (int, error) {
 }
 
 func registerUDFs(client *as.Client) error {
-	for _ = range time.Tick(100 * time.Millisecond) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for range ticker.C {
 		udfs, err := client.ListUDF(nil)
 		if err != nil {
 			return err
