@@ -110,6 +110,10 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 }
 
 func (tube *Tube) Delete(id int64) (bool, error) {
+	start := time.Now()
+	defer func() {
+		tube.Conn.timing("tube.delete.time", time.Since(start), "tube:"+tube.Name)
+	}()
 	return tube.delete(id, 0)
 }
 
@@ -256,6 +260,11 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 }
 
 func (tube *Tube) ReleaseWithRetry(id int64, delay time.Duration, incr, retryFlag bool) error {
+	start := time.Now()
+	defer func() {
+		tube.Conn.timing("tube.release.time", time.Since(start), "tube:"+tube.Name, "retry:"+strconv.FormatBool(retryFlag))
+	}()
+
 	client := tube.Conn.aerospike
 
 	key, err := as.NewKey(AerospikeNamespace, tube.Name, id)
@@ -417,8 +426,11 @@ func (tube *Tube) KickJob(id int64) error {
 	return client.PutBins(writePolicy, record.Key, binStatus, binReason, binDelay, binBuriedMeta, binMeta)
 }
 
-func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, retryFlag bool, tob int64,
-	err error) {
+func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, retryFlag bool, tob int64, err error) {
+	start := time.Now()
+	defer func() {
+		tube.Conn.timing("tube.reserve.time", time.Since(start), "tube:"+tube.Name)
+	}()
 
 	tube.once.Do(tube.releaseAbandoned)
 

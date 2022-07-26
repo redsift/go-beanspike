@@ -6,20 +6,37 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	as "github.com/aerospike/aerospike-client-go"
+	"github.com/redsift/go-stats/stats"
 )
 
 type Conn struct {
 	aerospike    *as.Client
 	clientID     string
 	statsHandler func(string, string, float64)
+	collector    stats.Collector
 }
 
 func (conn *Conn) stats(event, tube string, count float64) {
 	if conn.statsHandler != nil {
 		conn.statsHandler(event, tube, count)
 	}
+}
+
+// SetCollector set the collector to use for stats
+// TODO: it is a kludge for collecting scan metrics and should be refactored
+func (conn *Conn) SetCollector(collector stats.Collector) {
+	conn.collector = collector
+}
+
+// timing collects the given time metric
+func (conn *Conn) timing(name string, duration time.Duration, tags ...string) {
+	if conn.collector == nil {
+		return
+	}
+	conn.collector.Timing(name, duration, tags...)
 }
 
 type Tube struct {
@@ -99,19 +116,3 @@ func genID() string {
 	}
 	return fmt.Sprintf("????????:%v:%v", pid, count)
 }
-
-/*var portRE = regexp.MustCompile(`^tcp:\/\/(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b):(\d{1,5})$`)
-
-// Parse port check is the port var is actually a Docker ENV
-// as this can easily happen
-func parsePort(portStr string) (host string, port int, err error) {
-	match := portRE.FindAllStringSubmatch(portStr, -1)
-	if match != nil {
-		// Docker style port ENV
-		host = match[0][1]
-		portStr = match[0][2]
-	}
-
-	port, err = strconv.Atoi(portStr)
-	return host, port, err
-}*/
