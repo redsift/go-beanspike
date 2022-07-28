@@ -449,6 +449,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 		recordset, err = client.Query(policy, stm)
 
 		if err != nil {
+			tube.Conn.counter("tube.reserve.error", 1.0, "tube:"+tube.Name, "cause:query")
 			return 0, nil, 0, 0, false, 0, err
 		}
 
@@ -457,6 +458,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 		}(recordset)
 		for res := range recordset.Results() {
 			if res.Err != nil {
+				tube.Conn.counter("tube.reserve.error", 1.0, "tube:"+tube.Name, "cause:recordset")
 				if err == nil {
 					err = res.Err
 				}
@@ -481,6 +483,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 						reserve = AerospikeSymReservedTtr
 						binTtrExp, err = tube.timeJob(job, ttr)
 						if err != nil {
+							tube.Conn.counter("tube.reserve.error", 1.0, "tube:"+tube.Name, "cause:update_ttr")
 							return 0, nil, 0, 0, false, 0, err
 						}
 					}
@@ -503,10 +506,11 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 									// was compressed
 									body, err = decompress(body, ozValue.(int))
 									if err != nil {
-										return 0, nil, 0, 0, false, 0,
-											err
+										tube.Conn.counter("tube.reserve.error", 1.0, "tube:"+tube.Name, "cause:decompress")
+										return 0, nil, 0, 0, false, 0, err
 									}
 								} else {
+									tube.Conn.counter("tube.reserve.error", 1.0, "tube:"+tube.Name, "cause:pre_decompress")
 									return 0, nil, 0, 0, false, 0,
 										errors.New("Could not establish original size of compressed content")
 								}
@@ -554,6 +558,10 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 	// Some form of error or no job fall through
 	if err == nil {
 		err = ErrJobNotFound
+	}
+
+	if err != nil {
+		tube.Conn.counter("tube.reserve.error", 1.0, "tube:"+tube.Name, "cause:other")
 	}
 	return 0, nil, 0, 0, false, 0, err
 }

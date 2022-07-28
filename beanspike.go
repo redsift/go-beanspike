@@ -39,6 +39,14 @@ func (conn *Conn) timing(name string, duration time.Duration, tags ...string) {
 	conn.collector.Timing(name, duration, tags...)
 }
 
+// coounter collects the given counter metric
+func (conn *Conn) counter(name string, v float64, tags ...string) {
+	if conn.collector == nil {
+		return
+	}
+	conn.collector.Count(name, v, tags...)
+}
+
 type Tube struct {
 	Conn *Conn
 	Name string
