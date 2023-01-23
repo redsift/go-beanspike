@@ -28,6 +28,53 @@ func (tube *Tube) releaseAbandoned() {
 	_, _ = tube.bumpReservedEntries(AerospikeAdminScanSize)
 }
 
+// UpdateJobBody updates the body of a job without any other changes to the job metadata.
+// This function supposed to be called only if job is already "owned" by the client and it (client) is going to keep it.
+// The use case is update job after refreshing JWE token as result of the key rotation.
+func (tube *Tube) UpdateJobBody(id int64, body []byte, lz bool) error {
+	key, err := as.NewKey(AerospikeNamespace, tube.Name, id)
+	if err != nil {
+		return err
+	}
+
+	bins := make([]*as.Bin, 0, 3)
+
+	if lz && shouldCompress(body) {
+		var cbody []byte
+		cbody, err = compress(body)
+		if err != nil {
+			return err
+		}
+
+		if len(cbody) >= len(body) {
+			// incompressible, leave it raw, marked with a -value for AerospikeNameCompressedSize
+			bins = append(bins, as.NewBin(AerospikeNameBody, body))
+			bins = append(bins, as.NewBin(AerospikeNameCompressedSize, -len(cbody)))
+		} else {
+			bins = append(bins, as.NewBin(AerospikeNameBody, cbody))
+			bins = append(bins, as.NewBin(AerospikeNameCompressedSize, len(cbody)))
+		}
+	} else {
+		bins = append(bins, as.NewBin(AerospikeNameBody, body))
+	}
+
+	bins = append(bins, as.NewBin(AerospikeNameSize, len(body)))
+
+	policy := as.NewWritePolicy(0, 0)
+	policy.RecordExistsAction = as.UPDATE_ONLY
+	policy.CommitLevel = as.COMMIT_MASTER
+
+	if err := tube.Conn.aerospike.PutBins(policy, key, bins...); err != nil {
+		return err
+	}
+
+	if tube.Conn != nil {
+		tube.Conn.stats("tube.update.count", tube.Name, float64(1))
+	}
+
+	return nil
+}
+
 func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bool,
 	metadata string, tob int64) (id int64, err error) {
 	id, err = tube.Conn.newJobID()
