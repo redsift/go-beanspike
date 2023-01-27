@@ -28,6 +28,53 @@ func (tube *Tube) releaseAbandoned() {
 	_, _ = tube.bumpReservedEntries(AerospikeAdminScanSize)
 }
 
+// UpdateJobBody updates the body of a job without any other changes to the job metadata.
+// This function supposed to be called only if job is already "owned" by the client and it (client) is going to keep it.
+// The use case is update job after refreshing JWE token as result of the key rotation.
+func (tube *Tube) UpdateJobBody(id int64, body []byte, lz bool) error {
+	key, err := as.NewKey(AerospikeNamespace, tube.Name, id)
+	if err != nil {
+		return err
+	}
+
+	bins := make([]*as.Bin, 0, 3)
+
+	if lz && shouldCompress(body) {
+		var cbody []byte
+		cbody, err = compress(body)
+		if err != nil {
+			return err
+		}
+
+		if len(cbody) >= len(body) {
+			// incompressible, leave it raw, marked with a -value for AerospikeNameCompressedSize
+			bins = append(bins, as.NewBin(AerospikeNameBody, body))
+			bins = append(bins, as.NewBin(AerospikeNameCompressedSize, -len(cbody)))
+		} else {
+			bins = append(bins, as.NewBin(AerospikeNameBody, cbody))
+			bins = append(bins, as.NewBin(AerospikeNameCompressedSize, len(cbody)))
+		}
+	} else {
+		bins = append(bins, as.NewBin(AerospikeNameBody, body))
+	}
+
+	bins = append(bins, as.NewBin(AerospikeNameSize, len(body)))
+
+	policy := as.NewWritePolicy(0, 0)
+	policy.RecordExistsAction = as.UPDATE_ONLY
+	policy.CommitLevel = as.COMMIT_MASTER
+
+	if err := tube.Conn.aerospike.PutBins(policy, key, bins...); err != nil {
+		return err
+	}
+
+	if tube.Conn != nil {
+		tube.Conn.stats("tube.update.count", tube.Name, float64(1))
+	}
+
+	return nil
+}
+
 func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bool,
 	metadata string, tob int64) (id int64, err error) {
 	id, err = tube.Conn.newJobID()
@@ -110,6 +157,10 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 }
 
 func (tube *Tube) Delete(id int64) (bool, error) {
+	start := time.Now()
+	defer func() {
+		tube.Conn.timing("tube.delete.time", time.Since(start), "tube:"+tube.Name)
+	}()
 	return tube.delete(id, 0)
 }
 
@@ -256,6 +307,11 @@ func (tube *Tube) Release(id int64, delay time.Duration) error {
 }
 
 func (tube *Tube) ReleaseWithRetry(id int64, delay time.Duration, incr, retryFlag bool) error {
+	start := time.Now()
+	defer func() {
+		tube.Conn.timing("tube.release.time", time.Since(start), "tube:"+tube.Name, "retry:"+strconv.FormatBool(retryFlag))
+	}()
+
 	client := tube.Conn.aerospike
 
 	key, err := as.NewKey(AerospikeNamespace, tube.Name, id)
@@ -417,8 +473,11 @@ func (tube *Tube) KickJob(id int64) error {
 	return client.PutBins(writePolicy, record.Key, binStatus, binReason, binDelay, binBuriedMeta, binMeta)
 }
 
-func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, retryFlag bool, tob int64,
-	err error) {
+func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries int, retryFlag bool, tob int64, err error) {
+	start := time.Now()
+	defer func() {
+		tube.Conn.timing("tube.reserve.time", time.Since(start), "tube:"+tube.Name)
+	}()
 
 	tube.once.Do(tube.releaseAbandoned)
 
@@ -437,6 +496,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 		recordset, err = client.Query(policy, stm)
 
 		if err != nil {
+			tube.Conn.counter("tube.reserve.error", 1.0, "tube:"+tube.Name, "cause:query")
 			return 0, nil, 0, 0, false, 0, err
 		}
 
@@ -445,6 +505,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 		}(recordset)
 		for res := range recordset.Results() {
 			if res.Err != nil {
+				tube.Conn.counter("tube.reserve.error", 1.0, "tube:"+tube.Name, "cause:recordset")
 				if err == nil {
 					err = res.Err
 				}
@@ -469,6 +530,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 						reserve = AerospikeSymReservedTtr
 						binTtrExp, err = tube.timeJob(job, ttr)
 						if err != nil {
+							tube.Conn.counter("tube.reserve.error", 1.0, "tube:"+tube.Name, "cause:update_ttr")
 							return 0, nil, 0, 0, false, 0, err
 						}
 					}
@@ -491,10 +553,11 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 									// was compressed
 									body, err = decompress(body, ozValue.(int))
 									if err != nil {
-										return 0, nil, 0, 0, false, 0,
-											err
+										tube.Conn.counter("tube.reserve.error", 1.0, "tube:"+tube.Name, "cause:decompress")
+										return 0, nil, 0, 0, false, 0, err
 									}
 								} else {
+									tube.Conn.counter("tube.reserve.error", 1.0, "tube:"+tube.Name, "cause:pre_decompress")
 									return 0, nil, 0, 0, false, 0,
 										errors.New("Could not establish original size of compressed content")
 								}
@@ -542,6 +605,10 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 	// Some form of error or no job fall through
 	if err == nil {
 		err = ErrJobNotFound
+	}
+
+	if err != nil {
+		tube.Conn.counter("tube.reserve.error", 1.0, "tube:"+tube.Name, "cause:other")
 	}
 	return 0, nil, 0, 0, false, 0, err
 }
@@ -941,7 +1008,10 @@ func (tube *Tube) BumpDelayedEntries() (int, error) {
 }
 
 func registerUDFs(client *as.Client) error {
-	for _ = range time.Tick(100 * time.Millisecond) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for range ticker.C {
 		udfs, err := client.ListUDF(nil)
 		if err != nil {
 			return err
