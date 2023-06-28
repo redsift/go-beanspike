@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	as "github.com/aerospike/aerospike-client-go"
+	as "github.com/aerospike/aerospike-client-go/v4"
 	"github.com/redsift/go-stats/stats"
 )
 

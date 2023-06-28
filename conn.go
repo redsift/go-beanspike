@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	as "github.com/aerospike/aerospike-client-go"
-	ast "github.com/aerospike/aerospike-client-go/types"
+	as "github.com/aerospike/aerospike-client-go/v4"
+	ast "github.com/aerospike/aerospike-client-go/v4/types"
 )
 
 var tubesMap = struct {
