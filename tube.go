@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	as "github.com/aerospike/aerospike-client-go"
-	pt "github.com/aerospike/aerospike-client-go/types/particle_type"
+	as "github.com/aerospike/aerospike-client-go/v4"
+	pt "github.com/aerospike/aerospike-client-go/v4/types/particle_type"
 	lz4 "github.com/jmoiron/golz4"
 )
 
@@ -487,7 +487,7 @@ func (tube *Tube) Reserve() (id int64, body []byte, ttr time.Duration, retries i
 		stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
 			AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries,
 			AerospikeNameRetryFlag, AerospikeNameToB)
-		stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
+		stm.Filter = as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady)
 
 		policy := as.NewQueryPolicy()
 		policy.RecordQueueSize = AerospikeQueryQueueSize
@@ -619,7 +619,7 @@ func (tube *Tube) PeekBuried() (id int64, body []byte, ttr time.Duration, reason
 	for i := 0; i < 2; i++ {
 		stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameBody, AerospikeNameTtr,
 			AerospikeNameCompressedSize, AerospikeNameSize, AerospikeNameStatus, AerospikeNameReason)
-		stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymBuried))
+		stm.Filter = as.NewEqualFilter(AerospikeNameStatus, AerospikeSymBuried)
 
 		policy := as.NewQueryPolicy()
 		policy.RecordQueueSize = AerospikeQueryQueueSize
@@ -775,7 +775,7 @@ func (tube *Tube) bumpReservedEntries(n int) (int, error) {
 	client := tube.Conn.aerospike
 
 	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameTtrKey)
-	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReservedTtr))
+	stm.Filter = as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReservedTtr)
 
 	policy := as.NewQueryPolicy()
 	policy.RecordQueueSize = n
@@ -857,7 +857,7 @@ func (tube *Tube) bumpDelayedEntries(n int) (int, error) {
 	client := tube.Conn.aerospike
 
 	stm := as.NewStatement(AerospikeNamespace, tube.Name, AerospikeNameDelay)
-	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymDelayed))
+	stm.Filter = as.NewEqualFilter(AerospikeNameStatus, AerospikeSymDelayed)
 
 	policy := as.NewQueryPolicy()
 	policy.RecordQueueSize = n
@@ -937,7 +937,7 @@ func (tube *Tube) deleteZombieEntries(n int) (int, error) {
 	client := tube.Conn.aerospike
 
 	stm := as.NewStatement(AerospikeNamespace, tube.Name)
-	stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymDeleted))
+	stm.Filter = as.NewEqualFilter(AerospikeNameStatus, AerospikeSymDeleted)
 
 	policy := as.NewQueryPolicy()
 	policy.RecordQueueSize = n
@@ -1148,7 +1148,7 @@ func (tube *Tube) reserveBatch(ctx context.Context, dec JobDecoder, h JobHandler
 		AerospikeNameSize, AerospikeNameStatus, AerospikeNameRetries,
 		AerospikeNameRetryFlag, AerospikeNameToB)
 
-	_ = stm.Addfilter(as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady))
+	stm.Filter = as.NewEqualFilter(AerospikeNameStatus, AerospikeSymReady)
 
 	policy := as.NewQueryPolicy()
 	//policy.RecordQueueSize = AerospikeQueryQueueSize

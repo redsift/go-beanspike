@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	as "github.com/aerospike/aerospike-client-go"
+	as "github.com/aerospike/aerospike-client-go/v4"
 	"github.com/redsift/go-stats/stats"
 )
 
@@ -92,6 +92,8 @@ func Dial(id string, host string, port int, statsHandler func(string, string, fl
 
 	policy := as.NewClientPolicy()
 	policy.LimitConnectionsToQueueSize = true
+	policy.Timeout = time.Second
+	policy.LoginTimeout = time.Second
 
 	client, err := as.NewClientWithPolicy(policy, host, port)
 
