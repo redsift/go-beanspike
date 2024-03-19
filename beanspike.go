@@ -48,9 +48,12 @@ func (conn *Conn) counter(name string, v float64, tags ...string) {
 }
 
 type Tube struct {
-	Conn *Conn
-	Name string
-	once *sync.Once
+	Conn                *Conn
+	Name                string
+	once                *sync.Once
+	maxRetries          int
+	sleepBetweenRetries time.Duration
+	sleepMultiplier     float64
 }
 
 type Stats struct {

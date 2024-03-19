@@ -91,6 +91,11 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 	policy.RecordExistsAction = as.CREATE_ONLY
 	policy.SendKey = true
 	policy.CommitLevel = as.COMMIT_MASTER
+	if tube.maxRetries > 0 {
+		policy.MaxRetries = tube.maxRetries
+		policy.SleepBetweenRetries = tube.sleepBetweenRetries
+		policy.SleepMultiplier = tube.sleepMultiplier
+	}
 
 	client := tube.Conn.aerospike
 
@@ -1239,4 +1244,11 @@ func (tube *Tube) ReserveBatch(ctx context.Context, dec JobDecoder, h JobHandler
 	_, _ = tube.deleteZombieEntries(AerospikeAdminScanSize)
 
 	return reserved
+}
+
+// SetRetries sets the retry policy used in Put function.
+func (tube *Tube) SetRetries(maxRetries int, sleepBetweenRetries time.Duration, sleepMultiplier float64) {
+	tube.maxRetries = maxRetries
+	tube.sleepBetweenRetries = sleepBetweenRetries
+	tube.sleepMultiplier = sleepMultiplier
 }
