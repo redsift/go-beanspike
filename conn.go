@@ -15,22 +15,35 @@ var tubesMap = struct {
 	m map[string]*Tube
 }{m: make(map[string]*Tube)}
 
+// newJobID returns a new incremental integer ID. It allocates a batch of ids in the "last" bin
+// in "beanspike.metadata" set and returns ids from this batch incrementally.
 func (conn *Conn) newJobID() (int64, error) {
 	key, err := as.NewKey(AerospikeNamespace, AerospikeMetadataSet, "seq")
 	if err != nil {
 		return 0, err
 	}
 
-	bin := as.NewBin("last", as.NewLongValue(1))
+	conn.jobMutex.Lock()
+	defer conn.jobMutex.Unlock()
+	if conn.lastJobID != 0 && conn.lastJobID < conn.endJobID {
+		conn.lastJobID++
+		return conn.lastJobID, nil
+	}
+
+	bin := as.NewBin("last", as.NewLongValue(conn.jobIDBatchSize))
 	record, err := conn.aerospike.Operate(as.NewWritePolicy(0, 0), key, as.AddOp(bin), as.GetOp())
 	if err != nil {
 		return 0, err
 	}
 
-	// This type conversion seem required as the value appears to be a
-	// int instead of an int64
-	id := int64(record.Bins[bin.Name].(int))
-	return id, nil
+	id, ok := record.Bins[bin.Name].(int)
+	if !ok {
+		return 0, errors.New("failed to convert to int")
+	}
+	conn.endJobID = int64(id)
+	conn.lastJobID = conn.endJobID - conn.jobIDBatchSize + 1
+
+	return conn.lastJobID, nil
 }
 
 // Note, index limits may cause this to fail

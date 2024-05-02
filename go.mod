@@ -8,12 +8,15 @@ require (
 	github.com/jmoiron/golz4 v0.0.0-20160608053201-27f83594ae3e
 	github.com/redsift/clockwork v1.8.0
 	github.com/redsift/go-stats v1.1.0
+	github.com/stretchr/testify v1.8.1
 )
 
 require (
 	github.com/DataDog/datadog-go/v5 v5.3.0 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/philhofer/fwd v1.1.2 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/redsift/go-errs v0.1.4 // indirect
 	github.com/redsift/go-foodfans v1.0.4 // indirect
 	github.com/tinylib/msgp v1.1.8 // indirect
@@ -22,4 +25,5 @@ require (
 	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/sys v0.10.0 // indirect
 	golang.org/x/tools v0.11.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

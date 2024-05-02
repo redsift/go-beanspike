@@ -12,11 +12,17 @@ import (
 	"github.com/redsift/go-stats/stats"
 )
 
+const DefaultJobIDBatchSize = 100
+
 type Conn struct {
-	aerospike    *as.Client
-	clientID     string
-	statsHandler func(string, string, float64)
-	collector    stats.Collector
+	aerospike      *as.Client
+	clientID       string
+	statsHandler   func(string, string, float64)
+	collector      stats.Collector
+	jobIDBatchSize int64
+	lastJobID      int64
+	endJobID       int64
+	jobMutex       sync.Mutex
 }
 
 func (conn *Conn) stats(event, tube string, count float64) {
@@ -29,6 +35,12 @@ func (conn *Conn) stats(event, tube string, count float64) {
 // TODO: it is a kludge for collecting scan metrics and should be refactored
 func (conn *Conn) SetCollector(collector stats.Collector) {
 	conn.collector = collector
+}
+
+func (conn *Conn) SetIDBatchSize(size int64) {
+	conn.jobMutex.Lock()
+	defer conn.jobMutex.Unlock()
+	conn.jobIDBatchSize = size
 }
 
 // timing collects the given time metric
@@ -110,9 +122,10 @@ func Dial(id string, host string, port int, statsHandler func(string, string, fl
 	}
 
 	return &Conn{
-		aerospike:    client,
-		clientID:     id,
-		statsHandler: statsHandler,
+		aerospike:      client,
+		clientID:       id,
+		statsHandler:   statsHandler,
+		jobIDBatchSize: DefaultJobIDBatchSize,
 	}, nil
 
 }
