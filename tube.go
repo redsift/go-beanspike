@@ -14,6 +14,11 @@ import (
 	lz4 "github.com/jmoiron/golz4"
 )
 
+// The current projection is ~2900 years if we start incrementing the counter in 100M steps per second,
+// so the threshold around the value for 2000y should give us both a signal
+// we are growing quickly and buying time to solve the problem.
+const IDOverflowThreshold = math.MaxInt64 - 900*(math.MaxInt64/(100000000*60*60*24*365))
+
 var (
 	ErrEmptyRecord        = errors.New("ASSERT: Record empty")
 	ErrNotBuriedOrDelayed = errors.New("Job is not buried or delayed")
@@ -80,6 +85,10 @@ func (tube *Tube) Put(body []byte, delay time.Duration, ttr time.Duration, lz bo
 	id, err = tube.Conn.newJobID()
 	if err != nil {
 		return
+	}
+
+	if id > IDOverflowThreshold {
+		tube.Conn.counter("tube.idoverflow.error", 1.0, "tube:"+tube.Name)
 	}
 
 	key, err := as.NewKey(AerospikeNamespace, tube.Name, id)
